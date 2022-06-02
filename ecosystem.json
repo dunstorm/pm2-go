@@ -1,0 +1,8 @@
+[
+    {
+        "name": "python-test",
+        "args": ["test.py"],
+        "executablePath": "/usr/bin/python",
+        "autorestart": true
+    }
+]
