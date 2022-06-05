@@ -2,6 +2,7 @@ package server
 
 import (
 	"os"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -22,10 +23,14 @@ func (api *API) GetDB(empty string, reply *[]shared.Process) error {
 // FindProcess takes a string type and returns a Process
 func (api *API) FindProcess(name string, reply *shared.Process) error {
 	var found shared.Process
-	// Range statement that iterates over processArray
+	// Range statement that iterates over database
 	// 'v' is the value of the current iterateee
+	id, err := strconv.Atoi(name)
+	if err != nil {
+		id = -1
+	}
 	for _, v := range api.database {
-		if v.Name == name {
+		if v.Name == name || v.ID == id {
 			found = v
 			break
 		}
@@ -35,7 +40,7 @@ func (api *API) FindProcess(name string, reply *shared.Process) error {
 	return nil
 }
 
-// MakeToDo takes a ToDo type and appends to the todoArray
+// MakeProcess takes a Process type and appends to the database
 func (api *API) AddProcess(process shared.Process, reply *shared.Process) error {
 	process.ProcStatus = &shared.ProcStatus{
 		Status:    "online",
@@ -74,30 +79,31 @@ func (api *API) StopProcessByIndex(processIndex int, reply *bool) error {
 	return nil
 }
 
-func (api *API) StopProcessByName(name string, reply *bool) error {
+func (api *API) StopProcess(process shared.Process, reply *bool) error {
 	var found shared.Process
-	for _, process := range api.database {
-		if process.Name == name {
-			found = process
+	for _, p := range api.database {
+		if p.Name == process.Name || p.ID == process.ID {
+			found = p
 			break
 		}
 	}
 	if found.Pid == 0 {
-		api.logger.Info().Msgf("process not found: %s", name)
+		api.logger.Info().Msgf("process not found: %s", found.Name)
 		*reply = false
 		return nil
 	}
+	found.SetStatus("stopping")
 	if found.AutoRestart {
 		found.SetToStop(true)
 		api.database[found.ID] = found
 	}
-	process := found.GetProcess()
-	if process == nil {
-		api.logger.Info().Msgf("process not found: %s", name)
+	p := found.GetProcess()
+	if p == nil {
+		api.logger.Info().Msgf("process not found: %s", process.Name)
 		*reply = false
 		return nil
 	}
-	err := process.Signal(syscall.SIGINT)
+	err := p.Signal(syscall.SIGINT)
 	if err != nil {
 		api.logger.Info().Msgf("failed to stop process: %s", err.Error())
 		*reply = false
@@ -136,13 +142,13 @@ func (api *API) UpdateProcess(newProcess shared.Process, reply *shared.Process) 
 	return nil
 }
 
-// DeleteToDo takes a ToDo type and deletes it from todoArray
+// DeleteProcess takes a Process type and deletes it from ProcessArray
 func (api *API) DeleteProcess(process shared.Process, reply *shared.Process) error {
 	var deleted shared.Process
 	for i, v := range api.database {
-		if v.Name == process.Name {
-			// Delete ToDo by appending the items before it and those
-			// after to the todoArray variable
+		if v.Name == process.Name || v.ID == process.ID {
+			// Delete Process by appending the items before it and those
+			// after to the database variable
 			api.database = append(api.database[:i], api.database[i+1:]...)
 			deleted = process
 			break

@@ -45,7 +45,8 @@ var stopCmd = &cobra.Command{
 		}
 
 		logger.Info().Msgf("Applying action stopProcessId on app [%s]", args[0])
-		master.StopProcessByName(args[0])
+		master.StopProcess(process)
+		renderProcessList()
 	},
 }
 

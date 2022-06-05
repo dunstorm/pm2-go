@@ -40,7 +40,7 @@ func New() {
 	go func() {
 		for {
 			for index, p := range handler.database {
-				if p.ProcStatus.Status == "online" {
+				if p.ProcStatus.Status == "online" || p.ProcStatus.Status == "stopping" {
 					if _, ok := utils.IsProcessRunning(p.Pid); !ok {
 						p.UpdateUptime()
 						p.ResetPid()

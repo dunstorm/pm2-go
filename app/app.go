@@ -65,11 +65,11 @@ func (app *App) StopProcessByIndex(index int) bool {
 	return reply
 }
 
-func (app *App) StopProcessByName(name string) bool {
+func (app *App) StopProcess(process *shared.Process) bool {
 	var reply bool
 	app.createClient()
 	defer app.client.Close()
-	app.client.Call("API.StopProcessByName", name, &reply)
+	app.client.Call("API.StopProcess", process, &reply)
 	return reply
 }
 
@@ -82,7 +82,7 @@ func (app *App) StartProcess(newProcess *shared.Process) *shared.Process {
 }
 
 func (app *App) RestartProcess(process *shared.Process) *shared.Process {
-	app.StopProcessByName(process.Name)
+	app.StopProcess(process)
 	newProcess := shared.SpawnNewProcess(shared.SpawnParams{
 		Name:           process.Name,
 		Args:           process.Args,
@@ -92,4 +92,10 @@ func (app *App) RestartProcess(process *shared.Process) *shared.Process {
 	})
 	process = app.StartProcess(newProcess)
 	return process
+}
+
+func (app *App) DeleteProcess(process *shared.Process) {
+	app.createClient()
+	defer app.client.Close()
+	app.client.Call("API.DeleteProcess", process, nil)
 }

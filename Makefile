@@ -11,3 +11,7 @@ test:
 
 ls:
 	./bin/main ls
+
+testindex:
+	./bin/main start celery worker
+	./bin/main stop 0

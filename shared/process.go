@@ -54,6 +54,10 @@ func (p *Process) UpdateProcess(pid int) {
 	}
 }
 
+func (p *Process) SetStatus(status string) {
+	p.ProcStatus.Status = status
+}
+
 func (p *Process) SetToStop(toStop bool) {
 	p.toStop = toStop
 }
