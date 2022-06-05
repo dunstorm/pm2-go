@@ -46,6 +46,7 @@ pm2-go logs <app_name|id>
 
 ## TODO
 
+- [ ] Add tests
 - [ ] Add namespace feature
 - [ ] Add info command
 - [ ] Add load balancer??
