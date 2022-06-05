@@ -1,15 +1,26 @@
 package utils
 
 import (
+	"bufio"
+	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
+
+// new logger using zerolog
+func NewLogger() *zerolog.Logger {
+	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	return &logger
+}
 
 // implement isProcessRunning
 func IsProcessRunning(pid int) (*os.Process, bool) {
@@ -47,7 +58,8 @@ func ReadPidFile(pidFileName string) (int, error) {
 func GetMainDirectory() string {
 	dirname, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 	// add pm2-go directory
 	dirname = dirname + "/.pm2-go"
@@ -101,7 +113,82 @@ func CopyFile(src string, dst string) error {
 	// Change permissions Linux.
 	err = os.Chmod(dst, 0777)
 	if err != nil {
-		log.Println(err)
+		return err
 	}
 	return nil
+}
+
+func Tail(logPrefix string, prefixColor func(a ...interface{}) string, filename string, out io.Writer) {
+	f, err := os.Open(filename)
+	if err != nil {
+		panic(err)
+	}
+	// skip to end of file
+	f.Seek(0, 2)
+	defer f.Close()
+	r := bufio.NewReader(f)
+	info, err := f.Stat()
+	if err != nil {
+		panic(err)
+	}
+	oldSize := info.Size()
+	for {
+		for line, prefix, err := r.ReadLine(); err != io.EOF; line, prefix, err = r.ReadLine() {
+			if prefix {
+				fmt.Fprint(out, prefixColor(logPrefix), string(line))
+			} else {
+				fmt.Fprintln(out, prefixColor(logPrefix), string(line))
+			}
+		}
+		pos, err := f.Seek(0, io.SeekCurrent)
+		if err != nil {
+			panic(err)
+		}
+		for {
+			time.Sleep(200 * time.Millisecond)
+			newinfo, err := f.Stat()
+			if err != nil {
+				panic(err)
+			}
+			newSize := newinfo.Size()
+			if newSize != oldSize {
+				if newSize < oldSize {
+					f.Seek(0, 0)
+				} else {
+					f.Seek(pos, io.SeekStart)
+				}
+				r = bufio.NewReader(f)
+				oldSize = newSize
+				break
+			}
+		}
+	}
+}
+
+func GetLogs(filename string, n int) ([]string, error) {
+	var lines []string
+	file, err := os.Open(filename)
+	if err != nil {
+		return lines, err
+	}
+	file.Seek(-1000, 2)
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return lines, err
+	}
+	if len(lines) < n {
+		return lines, nil
+	}
+	return lines[len(lines)-n:], nil
+}
+
+// print logs from a array of string
+func PrintLogs(logs []string, logPrefix string, color func(a ...interface{}) string) {
+	for _, line := range logs {
+		fmt.Println(color(logPrefix), line)
+	}
 }

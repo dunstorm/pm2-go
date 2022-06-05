@@ -7,27 +7,23 @@ import (
 	"os"
 	"time"
 
+	"github.com/dunstorm/pm2-go/shared"
 	"github.com/dunstorm/pm2-go/utils"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
 )
 
 func New() {
-	// Log as JSON instead of the default ASCII formatter.
-	log.SetFormatter(&log.TextFormatter{})
-
-	// Output to stdout instead of the default stderr
-	// Can be any io.Writer, see below for File example
-	log.SetOutput(os.Stdout)
-
-	// Only log the warning severity or above.
-	log.SetLevel(log.DebugLevel)
-
-	handler := new(API)
+	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
+	handler := &API{
+		logger:   &logger,
+		database: make([]shared.Process, 0),
+	}
 
 	// Publish the receivers methods
 	err := rpc.Register(handler)
 	if err != nil {
-		log.Fatal("Format of service API isn't correct. ", err)
+		handler.logger.Fatal().Msgf("Format of service API isn't correct. %s", err)
+		return
 	}
 
 	// Register a HTTP handler
@@ -36,19 +32,43 @@ func New() {
 	// Listen to TPC connections on port 9001
 	listener, e := net.Listen("tcp", ":9001")
 	if e != nil {
-		log.Fatal("Listen error: ", e)
+		handler.logger.Fatal().Msgf("Listen error: %s", e)
+		return
 	}
-	log.Printf("Serving RPC server on port %d", 9001)
+	handler.logger.Info().Msgf("Serving RPC server on port %d", 9001)
 
 	go func() {
 		for {
-			for index, p := range database {
+			for index, p := range handler.database {
 				if p.ProcStatus.Status == "online" {
 					if _, ok := utils.IsProcessRunning(p.Pid); !ok {
 						p.UpdateUptime()
 						p.ResetPid()
 						p.UpdateStatus("stopped")
-						database[index] = p
+						handler.database[index] = p
+
+						if p.AutoRestart && !p.GetToStop() {
+							handler.logger.Info().Msgf("process %s is being restarted", p.Name)
+
+							p.IncreaseRestarts()
+							newProcess := shared.SpawnNewProcess(shared.SpawnParams{
+								Name:           p.Name,
+								Args:           p.Args,
+								ExecutablePath: p.ExecutablePath,
+								AutoRestart:    p.AutoRestart,
+								Logger:         handler.logger,
+							})
+
+							p.Pid = newProcess.Pid
+							p.UpdateStatus("online")
+							p.SetProcess(newProcess.GetProcess())
+							p.InitUptime()
+							p.InitStartedAt()
+							p.UpdateProcess(p.Pid)
+
+							go p.GetProcess().Wait()
+							handler.database[index] = p
+						}
 					} else {
 						p.UpdateUptime()
 					}
@@ -61,6 +81,6 @@ func New() {
 	// Start accept incoming HTTP connections
 	err = http.Serve(listener, nil)
 	if err != nil {
-		log.Fatal("Error serving: ", err)
+		handler.logger.Fatal().Msgf("Error serving: %s", err)
 	}
 }

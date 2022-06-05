@@ -1,8 +1,8 @@
 [
     {
         "name": "python-test",
-        "args": ["test.py"],
-        "executablePath": "/usr/bin/python",
+        "args": ["-u", "test.py"],
+        "executablePath": "python",
         "autorestart": true
     }
 ]

@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	"github.com/dunstorm/pm2-go/app"
+	"github.com/dunstorm/pm2-go/shared"
 	"github.com/spf13/cobra"
 )
 
@@ -19,25 +19,40 @@ var startCmd = &cobra.Command{
 			return
 		}
 
+		logger := master.GetLogger()
+
 		// check if args[0] is a file
-		if _, err := os.Stat(args[0]); err == nil {
-			master.StartFile(args[0])
+		// get file extension
+		// if it's a json file, parse it and start the app
+		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
+			err = master.StartFile(args[0])
+			if err == nil {
+				renderProcessList()
+			} else {
+				logger.Fatal().Msg(err.Error())
+			}
 			return
 		}
 
 		// if you can find the app in the database, start it
 		process := master.FindProcess(args[0])
 		if process.Name != "" {
+			master.GetLogger().Info().Msgf("Applying action startProcessId on app [%d](pid: [ %d ])", process.ID, process.Pid)
 			master.RestartProcess(process)
+			renderProcessList()
 			return
 		}
 
 		// add process to the database
-		process = master.SpawnNewProcess(app.SpawnParams{
+		process = shared.SpawnNewProcess(shared.SpawnParams{
 			ExecutablePath: args[0],
 			Args:           args[1:],
+			Logger:         logger,
 		})
+		master.GetLogger().Info().Msgf("Applying action addProcessName on app [%s](pid: [ %d ])", process.Name, process.Pid)
 		master.AddProcess(process)
+
+		renderProcessList()
 	},
 }
 

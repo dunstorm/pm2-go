@@ -51,4 +51,5 @@ func init() {
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().BoolP("daemon", "d", false, "Run as daemon")
+	logsCmd.PersistentFlags().IntP("lines", "l", 15, "Number of lines to tail")
 }

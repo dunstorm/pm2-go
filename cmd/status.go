@@ -6,7 +6,6 @@ package cmd
 
 import (
 	"github.com/dunstorm/pm2-go/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -21,17 +20,18 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		logger := master.GetLogger()
 		pid, err := utils.ReadPidFile("daemon.pid")
 		if err != nil {
-			log.Info("PM2 Daemon Not Running")
+			logger.Info().Msg("PM2 Daemon Not Running")
 			return
 		}
 		process, isRunning := utils.IsProcessRunning(pid)
 		if isRunning {
-			log.Info("PM2 Daemon Running")
-			log.Info("PID: ", process.Pid)
+			logger.Info().Msg("PM2 Daemon Running")
+			logger.Info().Msgf("PID: %d", process.Pid)
 		} else {
-			log.Info("PM2 Daemon Not Running")
+			logger.Info().Msg("PM2 Daemon Not Running")
 		}
 	},
 }

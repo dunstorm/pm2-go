@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/dunstorm/pm2-go/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -27,25 +26,26 @@ to quickly create a Cobra application.`,
 		if err != nil {
 			return
 		}
+		logger := master.GetLogger()
 		process, isRunning := utils.IsProcessRunning(pid)
 		if isRunning {
 			procs := master.ListProcs()
 			if len(procs) > 0 {
 				for _, p := range procs {
 					if p.ProcStatus.Status == "online" {
-						log.Info("Applying action stopProcessId on app [", p.Name, "](pid: [ ", p.Pid, " ])")
+						logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", p.Name, p.Pid)
 						master.StopProcessByIndex(p.ID)
 					}
 				}
 			} else {
-				log.Warn("No processes found")
+				logger.Warn().Msg("No processes found")
 			}
 			err := process.Kill()
 			if err != nil {
 				fmt.Println(err)
 				return
 			}
-			log.Info("PM2 Daemon Stopped")
+			logger.Info().Msg("PM2 Daemon Stopped")
 		}
 	},
 }
