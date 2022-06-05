@@ -1,6 +1,6 @@
 # PM2-GO
 
-![Go Report](https://goreportcard.com/badge/github.com/dunstorm/pm2-go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/dunstorm/pm2-go)](https://goreportcard.com/report/github.com/dunstorm/pm2-go)
 
 PM2-GO is a clone of [Unitech/pm2](https://github.com/Unitech/pm2) made using golang. The aim is to make it easy to install. Performance is the bonus.
 

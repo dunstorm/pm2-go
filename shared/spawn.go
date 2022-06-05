@@ -17,6 +17,7 @@ type SpawnParams struct {
 	Name           string   `json:"name"`
 	ExecutablePath string   `json:"executablePath"`
 	Args           []string `json:"args"`
+	Cwd            string   `json:"cwd"`
 	AutoRestart    bool     `json:"autorestart"`
 	Logger         *zerolog.Logger
 
@@ -40,6 +41,10 @@ func (params *SpawnParams) fillDefaults() error {
 
 	if params.Logger == nil {
 		params.Logger = utils.NewLogger()
+	}
+
+	if params.Cwd == "" {
+		params.Cwd, _ = os.Getwd()
 	}
 
 	nameLower := strings.ToLower(params.Name)
@@ -95,7 +100,7 @@ func SpawnNewProcess(params SpawnParams) *Process {
 
 	// create process
 	var attr = os.ProcAttr{
-		Dir: ".",
+		Dir: params.Cwd,
 		Env: os.Environ(),
 		Files: []*os.File{
 			params.nullFile,
@@ -132,6 +137,7 @@ func SpawnNewProcess(params SpawnParams) *Process {
 			ExecutablePath: params.ExecutablePath,
 			Pid:            process.Pid,
 			Args:           params.Args,
+			Cwd:            params.Cwd,
 			LogFilePath:    params.LogFilePath,
 			ErrFilePath:    params.ErrFilePath,
 			PidFilePath:    params.PidPilePath,

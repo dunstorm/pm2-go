@@ -89,6 +89,7 @@ func (app *App) RestartProcess(process *shared.Process) *shared.Process {
 		ExecutablePath: process.ExecutablePath,
 		AutoRestart:    process.AutoRestart,
 		Logger:         app.logger,
+		Cwd:            process.Cwd,
 	})
 	process = app.StartProcess(newProcess)
 	return process

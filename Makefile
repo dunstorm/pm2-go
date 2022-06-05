@@ -6,11 +6,20 @@ daemon:
 	./bin/main kill
 	./bin/main -d
 
-test:
-	./bin/main start python test.py
+start:
+	./bin/main start examples/ecosystem.json
+
+stop:
+	./bin/main stop examples/ecosystem.json
+
+delete:
+	./bin/main delete examples/ecosystem.json
 
 ls:
 	./bin/main ls
+
+logs:
+	./bin/main logs python-test
 
 testindex:
 	./bin/main start celery worker

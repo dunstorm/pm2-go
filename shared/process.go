@@ -26,6 +26,7 @@ type Process struct {
 	ExecutablePath string
 	Pid            int
 	AutoRestart    bool
+	Cwd            string
 	PidFilePath    string
 	LogFilePath    string
 	ErrFilePath    string
@@ -72,7 +73,7 @@ func (p *Process) UpdatePid(pid int) {
 }
 
 func (p *Process) ResetPid() {
-	p.Pid = -1
+	p.Pid = 0
 }
 
 func (p *Process) UpdateUptime() {

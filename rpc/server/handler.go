@@ -52,7 +52,7 @@ func (api *API) AddProcess(process shared.Process, reply *shared.Process) error 
 	process.ID = len(api.database)
 	found, err := os.FindProcess(process.Pid)
 	if err != nil {
-		process.Pid = -1
+		process.Pid = 0
 	}
 	process.SetProcess(found)
 	process.SetToStop(false)
@@ -110,6 +110,7 @@ func (api *API) StopProcess(process shared.Process, reply *bool) error {
 		return nil
 	}
 	found.GetProcess().Wait()
+	found.SetStatus("stopped")
 	*reply = true
 	return nil
 }
@@ -129,10 +130,11 @@ func (api *API) UpdateProcess(newProcess shared.Process, reply *shared.Process) 
 	process.LogFilePath = newProcess.LogFilePath
 	process.ErrFilePath = newProcess.ErrFilePath
 	process.AutoRestart = newProcess.AutoRestart
+	process.Cwd = newProcess.Cwd
 
 	found, err := os.FindProcess(process.Pid)
 	if err != nil {
-		process.Pid = -1
+		process.Pid = 0
 	}
 	process.SetProcess(found)
 	process.SetToStop(false)

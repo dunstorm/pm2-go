@@ -5,6 +5,8 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,19 @@ var deleteCmd = &cobra.Command{
 
 		logger := master.GetLogger()
 
+		// check if args[0] is a file
+		// get file extension
+		// if it's a json file, parse it and start the app
+		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
+			err = master.DeleteFile(args[0])
+			if err == nil {
+				renderProcessList()
+			} else {
+				logger.Fatal().Msg(err.Error())
+			}
+			return
+		}
+
 		process := master.FindProcess(args[0])
 		if process.ProcStatus == nil {
 			logger.Error().Msgf("Process or Namespace %s not found", args[0])
@@ -36,6 +51,7 @@ var deleteCmd = &cobra.Command{
 		// delete a process
 		logger.Info().Msgf("Applying action deleteProcessId on app [%s]", process.Name)
 		master.DeleteProcess(process)
+		logger.Info().Msgf("[%s] ✓", process.Name)
 
 		renderProcessList()
 	},

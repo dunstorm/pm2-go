@@ -48,14 +48,13 @@ func New() {
 						handler.database[index] = p
 
 						if p.AutoRestart && !p.GetToStop() {
-							handler.logger.Info().Msgf("process %s is being restarted", p.Name)
-
 							p.IncreaseRestarts()
 							newProcess := shared.SpawnNewProcess(shared.SpawnParams{
 								Name:           p.Name,
 								Args:           p.Args,
 								ExecutablePath: p.ExecutablePath,
 								AutoRestart:    p.AutoRestart,
+								Cwd:            p.Cwd,
 								Logger:         handler.logger,
 							})
 
