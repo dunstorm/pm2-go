@@ -5,6 +5,7 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -18,8 +19,8 @@ import (
 // logsCmd represents the logs command
 var logsCmd = &cobra.Command{
 	Use:   "logs [options] [id|name|namespace]",
-	Short: "stream logs file. Default stream all logs",
-	Long:  `stream logs file. Default stream all logs`,
+	Short: "Stream logs file",
+	Long:  `Stream logs file`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(os.Args) < 1 {
 			cmd.Usage()
@@ -49,23 +50,40 @@ var logsCmd = &cobra.Command{
 			cyanBold := color.New(color.FgCyan, color.Bold)
 			cyanBold.Printf("[TAILING] Tailing last %d lines for [%s] process (change the value with --lines option)\n", tail, process.Name)
 
-			// print stdout logs
-			color.Green("%s last %d lines", process.LogFilePath, tail)
-			logs, err := utils.GetLogs(process.LogFilePath, tail)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				return
-			}
-			utils.PrintLogs(logs, logPrefix, green)
+			outLastModified := utils.GetLastModified(process.LogFilePath)
+			errLastModified := utils.GetLastModified(process.ErrFilePath)
 
-			// print error logs
-			color.Red("\n%s last %d lines", process.ErrFilePath, tail)
-			logs, err = utils.GetLogs(process.ErrFilePath, tail)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				return
+			printStdoutLogs := func() {
+				// print stdout logs
+				color.Green("%s last %d lines", process.LogFilePath, tail)
+				logs, err := utils.GetLogs(process.LogFilePath, tail)
+				if err != nil {
+					logger.Error().Msg(err.Error())
+					return
+				}
+				utils.PrintLogs(logs, logPrefix, green)
 			}
-			utils.PrintLogs(logs, logPrefix, red)
+
+			printStderrLogs := func() {
+				// print error logs
+				color.Red("%s last %d lines", process.ErrFilePath, tail)
+				logs, err := utils.GetLogs(process.ErrFilePath, tail)
+				if err != nil {
+					logger.Error().Msg(err.Error())
+					return
+				}
+				utils.PrintLogs(logs, logPrefix, red)
+			}
+
+			if errLastModified.Before(outLastModified) {
+				printStderrLogs()
+				fmt.Println()
+				printStdoutLogs()
+			} else {
+				printStdoutLogs()
+				fmt.Println()
+				printStderrLogs()
+			}
 
 			// to run it indefinitely
 			var wg sync.WaitGroup

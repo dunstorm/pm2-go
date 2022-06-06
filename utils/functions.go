@@ -165,6 +165,14 @@ func Tail(logPrefix string, prefixColor func(a ...interface{}) string, filename 
 	}
 }
 
+func GetLastModified(filename string) time.Time {
+	info, err := os.Stat(filename)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime()
+}
+
 func GetLogs(filename string, n int) ([]string, error) {
 	var lines []string
 	file, err := os.Open(filename)
