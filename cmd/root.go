@@ -5,7 +5,6 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"log"
 	"os"
 
 	app "github.com/dunstorm/pm2-go/app"
@@ -18,16 +17,16 @@ var master = app.New()
 var rootCmd = &cobra.Command{
 	Use:   "pm2-go",
 	Short: "Production process manager written in Go",
-	Long: `PM2 is a production process manager for any application with a built-in load balancer (WIP).
+	Long: `PM2-GO is a production process manager for any application with a built-in load balancer (WIP).
 It allows you to keep applications alive forever, to reload them without downtime and to facilitate common system admin tasks.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
-		if daemon, err := cmd.PersistentFlags().GetBool("daemon"); daemon {
+		if daemon, _ := cmd.PersistentFlags().GetBool("daemon"); daemon {
 			master.SpawnDaemon()
-		} else {
-			log.Fatal(err)
+			return
 		}
+		cmd.Usage()
 	},
 }
 

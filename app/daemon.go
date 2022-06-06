@@ -2,8 +2,10 @@ package app
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path"
+	"time"
 
 	"github.com/dunstorm/pm2-go/rpc/server"
 	"github.com/dunstorm/pm2-go/utils"
@@ -35,6 +37,15 @@ const (
 
 func wasReborn() bool {
 	return os.Getenv(MARK_NAME) == MARK_VALUE
+}
+
+func isPortOpen(port int) bool {
+	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	return true
 }
 
 func (app *App) SpawnDaemon() {
@@ -112,7 +123,22 @@ func (app *App) SpawnDaemon() {
 			return
 		}
 
-		app.logger.Info().Msg("PM2 Successfully daemonized")
+		// wait for 9001 port to open with a timeout of 2s
+		found := false
+		for i := 0; i < 200; i++ {
+			if isPortOpen(9001) {
+				found = true
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		if !found {
+			app.logger.Error().Msg("PM2 Failed to start")
+			os.Exit(1)
+		} else {
+			app.logger.Info().Msg("PM2 Successfully daemonized")
+		}
 	}
 
 	if wasReborn() {

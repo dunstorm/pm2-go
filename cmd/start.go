@@ -10,8 +10,8 @@ import (
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start [options] [name|namespace|file|ecosystem|id...]",
-	Short: "start and daemonize an app",
-	Long:  `start and daemonize an app`,
+	Short: "Start and daemonize an app",
+	Long:  `Start and daemonize an app`,
 	Run: func(cmd *cobra.Command, args []string) {
 		master.SpawnDaemon()
 		if len(args) < 1 {

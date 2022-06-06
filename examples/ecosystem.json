@@ -3,7 +3,7 @@
         "name": "python-test",
         "args": ["-u", "test.py"],
         "executablePath": "python",
-        "autorestart": true,
+        "autorestart": false,
         "cwd": "./examples"
     }
 ]

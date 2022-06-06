@@ -13,8 +13,8 @@ import (
 // stopCmd represents the stop command
 var stopCmd = &cobra.Command{
 	Use:   "stop [options] <id|name|namespace|all|json|stdin...>",
-	Short: "stop a process",
-	Long:  `stop a process`,
+	Short: "Stop a process",
+	Long:  `Stop a process`,
 	Run: func(cmd *cobra.Command, args []string) {
 		master.SpawnDaemon()
 		if len(args) < 1 {
