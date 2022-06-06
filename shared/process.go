@@ -106,7 +106,7 @@ func (p *Process) UpdateCPUMemory() {
 		return
 	}
 	// launch command and read content
-	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", p.Pid), "-o", "pcpu, rss")
+	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", p.Pid), "-o", "pcpu,rss")
 	output, err := cmd.Output()
 	if err != nil {
 		return
