@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path"
 	"time"
 
@@ -90,7 +91,7 @@ func (app *App) SpawnDaemon() {
 			},
 		}
 
-		binPath := os.Args[0]
+		binPath, _ := exec.LookPath(os.Args[0])
 
 		// check if substring present in string
 		if utils.StringContains(binPath, "/var/folders") {
