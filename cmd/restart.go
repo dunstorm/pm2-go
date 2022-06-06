@@ -13,8 +13,8 @@ import (
 // restartCmd represents the restart command
 var restartCmd = &cobra.Command{
 	Use:   "restart [options] <id|name|namespace|all|json|stdin...>",
-	Short: "restart a process",
-	Long:  `restart a process`,
+	Short: "Restart a process",
+	Long:  `Restart a process`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			cmd.Usage()

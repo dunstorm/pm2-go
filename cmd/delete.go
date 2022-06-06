@@ -13,8 +13,8 @@ import (
 // deleteCmd represents the delete command
 var deleteCmd = &cobra.Command{
 	Use:   "delete [options] <name|id|namespace|script|all|json|stdin...>",
-	Short: "stop and delete a process from pm2 process list",
-	Long:  `stop and delete a process from pm2 process list`,
+	Short: "Stop and delete a process from pm2 process list",
+	Long:  `Stop and delete a process from pm2 process list`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			cmd.Usage()

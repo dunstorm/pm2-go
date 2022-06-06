@@ -18,6 +18,9 @@ delete:
 ls:
 	./bin/main ls
 
+kill:
+	./bin/main kill
+
 logs:
 	./bin/main logs python-test
 

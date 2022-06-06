@@ -54,8 +54,8 @@ func renderProcessList() {
 // lsCmd represents the ls command
 var lsCmd = &cobra.Command{
 	Use:   "ls",
-	Short: "list all processes",
-	Long:  "list all processes",
+	Short: "List all processes",
+	Long:  "List all processes",
 	Run: func(cmd *cobra.Command, args []string) {
 		master.SpawnDaemon()
 		renderProcessList()
