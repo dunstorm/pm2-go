@@ -45,7 +45,10 @@ func New() {
 						p.UpdateUptime()
 						p.ResetPid()
 						p.UpdateStatus("stopped")
+
+						handler.mu.Lock()
 						handler.database[index] = p
+						handler.mu.Unlock()
 
 						if p.AutoRestart && !p.GetToStop() {
 							p.IncreaseRestarts()
@@ -66,14 +69,16 @@ func New() {
 							p.UpdateProcess(p.Pid)
 
 							go p.GetProcess().Wait()
+							handler.mu.Lock()
 							handler.database[index] = p
+							handler.mu.Unlock()
 						}
 					} else {
 						p.UpdateUptime()
 					}
 				}
 			}
-			time.Sleep(1 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 

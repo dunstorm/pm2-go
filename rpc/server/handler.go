@@ -3,6 +3,7 @@ package server
 import (
 	"os"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 type API struct {
 	logger   *zerolog.Logger
 	database []shared.Process
+	mu       sync.Mutex
 }
 
 func (api *API) GetDB(empty string, reply *[]shared.Process) error {
@@ -56,7 +58,9 @@ func (api *API) AddProcess(process shared.Process, reply *shared.Process) error 
 	}
 	process.SetProcess(found)
 	process.SetToStop(false)
+	api.mu.Lock()
 	api.database = append(api.database, process)
+	api.mu.Unlock()
 	*reply = process
 	return nil
 }
@@ -139,7 +143,9 @@ func (api *API) UpdateProcess(newProcess shared.Process, reply *shared.Process) 
 	process.SetProcess(found)
 	process.SetToStop(false)
 
+	api.mu.Lock()
 	api.database[newProcess.ID] = process
+	api.mu.Unlock()
 	*reply = process
 	return nil
 }
@@ -151,7 +157,9 @@ func (api *API) DeleteProcess(process shared.Process, reply *shared.Process) err
 		if v.Name == process.Name || v.ID == process.ID {
 			// Delete Process by appending the items before it and those
 			// after to the database variable
+			api.mu.Lock()
 			api.database = append(api.database[:i], api.database[i+1:]...)
+			api.mu.Unlock()
 			deleted = process
 			break
 		}
