@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -39,6 +40,35 @@ func (api *API) FindProcess(name string, reply *shared.Process) error {
 	}
 	// found will either be the found Process or a zerod Process
 	*reply = found
+	return nil
+}
+
+// start a process from SpawnParams and return info
+func (api *API) StartProcess(params shared.SpawnParams, reply *shared.Process) error {
+	process := shared.SpawnNewProcess(params)
+	if process == nil {
+		api.logger.Info().Msgf("failed to start process: %s", params.Name)
+		reply = nil
+		return nil
+	}
+	process.ProcStatus = &shared.ProcStatus{
+		Status:    "online",
+		StartedAt: time.Now(),
+		Uptime:    time.Duration(0),
+		CPU:       "0.0%",
+		Memory:    "0.0MB",
+	}
+	process.ID = len(api.database)
+	process.SetToStop(false)
+
+	api.mu.Lock()
+	api.database = append(api.database, *process)
+	api.mu.Unlock()
+
+	process.UpdateProcess(process.Pid)
+	go process.GetProcess().Wait()
+
+	*reply = *process
 	return nil
 }
 
@@ -110,11 +140,33 @@ func (api *API) StopProcess(process shared.Process, reply *bool) error {
 	err := p.Signal(syscall.SIGINT)
 	if err != nil {
 		api.logger.Info().Msgf("failed to stop process: %s", err.Error())
-		*reply = false
+		found.SetStatus("stopped")
+		found.Pid = 0
+
+		// update database with new process
+		api.mu.Lock()
+		api.database[found.ID] = found
+		api.mu.Unlock()
+
+		*reply = true
 		return nil
 	}
-	found.GetProcess().Wait()
+
+	osProcess := found.GetProcess()
+	api.logger.Debug().Msgf("%v", osProcess)
+
+	state, err := osProcess.Wait()
+	fmt.Println(state)
+	fmt.Println(err)
+
 	found.SetStatus("stopped")
+	found.Pid = 0
+
+	// update database with new process
+	api.mu.Lock()
+	api.database[found.ID] = found
+	api.mu.Unlock()
+
 	*reply = true
 	return nil
 }

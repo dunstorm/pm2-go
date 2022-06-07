@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 
 	"github.com/dunstorm/pm2-go/shared"
@@ -32,15 +33,20 @@ func (app *App) StartFile(filePath string) error {
 		var process *shared.Process
 		process = app.FindProcess(p.Name)
 		if process.ProcStatus == nil {
-			process = shared.SpawnNewProcess(shared.SpawnParams{
+			params := shared.SpawnParams{
 				Name:           p.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
 				AutoRestart:    p.AutoRestart,
-				Logger:         app.logger,
 				Cwd:            p.Cwd,
-			})
-			app.AddProcess(process)
+			}
+			params.SetLogger(app.logger)
+			err := params.CheckParams()
+			if err != nil {
+				continue
+			}
+			process = app.StartProcess(&params)
+			fmt.Println(process)
 		} else {
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
@@ -53,11 +59,10 @@ func (app *App) StartFile(filePath string) error {
 				Args:           process.Args,
 				ExecutablePath: process.ExecutablePath,
 				AutoRestart:    process.AutoRestart,
-				Logger:         app.logger,
 				Cwd:            process.Cwd,
 			})
 			newProcess.ID = process.ID
-			app.StartProcess(newProcess)
+			app.UpdateProcess(newProcess)
 		}
 	}
 	return nil

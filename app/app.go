@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"net/rpc"
 	"os"
 
@@ -31,6 +32,17 @@ func (app *App) createClient() {
 		app.logger.Fatal().Msgf("Connection error: %s", err.Error())
 		os.Exit(1)
 	}
+}
+
+func (app *App) StartProcess(params *shared.SpawnParams) *shared.Process {
+	var reply shared.Process
+	app.createClient()
+	defer app.client.Close()
+	err := app.client.Call("API.StartProcess", params, &reply)
+	if err != nil {
+		fmt.Println(err)
+	}
+	return &reply
 }
 
 func (app *App) AddProcess(process *shared.Process) shared.Process {
@@ -73,7 +85,7 @@ func (app *App) StopProcess(process *shared.Process) bool {
 	return reply
 }
 
-func (app *App) StartProcess(newProcess *shared.Process) *shared.Process {
+func (app *App) UpdateProcess(newProcess *shared.Process) *shared.Process {
 	var reply *shared.Process
 	app.createClient()
 	defer app.client.Close()
@@ -88,10 +100,9 @@ func (app *App) RestartProcess(process *shared.Process) *shared.Process {
 		Args:           process.Args,
 		ExecutablePath: process.ExecutablePath,
 		AutoRestart:    process.AutoRestart,
-		Logger:         app.logger,
 		Cwd:            process.Cwd,
 	})
-	process = app.StartProcess(newProcess)
+	process = app.UpdateProcess(newProcess)
 	return process
 }
 

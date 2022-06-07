@@ -19,15 +19,19 @@ type SpawnParams struct {
 	Args           []string `json:"args"`
 	Cwd            string   `json:"cwd"`
 	AutoRestart    bool     `json:"autorestart"`
-	Logger         *zerolog.Logger
 
 	PidPilePath string `json:"-"`
 	LogFilePath string `json:"-"`
 	ErrFilePath string `json:"-"`
 
+	logger   *zerolog.Logger
 	logFile  *os.File
 	errFile  *os.File
 	nullFile *os.File
+}
+
+func (params *SpawnParams) SetLogger(logger *zerolog.Logger) {
+	params.logger = logger
 }
 
 func (params *SpawnParams) fillDefaults() error {
@@ -39,8 +43,8 @@ func (params *SpawnParams) fillDefaults() error {
 		params.Name = strings.ToLower(params.ExecutablePath)
 	}
 
-	if params.Logger == nil {
-		params.Logger = utils.NewLogger()
+	if params.logger == nil {
+		params.logger = utils.NewLogger()
 	}
 
 	if params.Cwd == "" {
@@ -69,35 +73,36 @@ func (params *SpawnParams) createFiles() error {
 	return nil
 }
 
-func SpawnNewProcess(params SpawnParams) *Process {
+func (params *SpawnParams) CheckParams() error {
 	// validate params
 	err := params.fillDefaults()
 	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		params.logger.Fatal().Msg(err.Error())
+		return err
 	}
 
 	splitExecutablePath := strings.Split(params.ExecutablePath, "/")
 	if splitExecutablePath[len(splitExecutablePath)-1] == "python" && params.Args[0] != "-u" {
-		params.Logger.Warn().Msg("Add -u flag to prevent output buffering on python")
+		params.logger.Warn().Msg("Add -u flag to prevent output buffering on python")
 	}
-
-	// params.Logger.Info().Msg("Spawning new process with params: ")
-	// fmt.Println(string(jsonParams))
 
 	// create files
 	err = params.createFiles()
 	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		params.logger.Fatal().Msg(err.Error())
+		return err
 	}
 
 	params.ExecutablePath, err = exec.LookPath(params.ExecutablePath)
 	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		params.logger.Fatal().Msg(err.Error())
+		return err
 	}
 
+	return nil
+}
+
+func SpawnNewProcess(params SpawnParams) *Process {
 	// create process
 	var attr = os.ProcAttr{
 		Dir: params.Cwd,
@@ -122,12 +127,12 @@ func SpawnNewProcess(params SpawnParams) *Process {
 	process, err := os.StartProcess(params.ExecutablePath, fullCommand, &attr)
 
 	if err == nil {
-		params.Logger.Info().Msgf("[%s] ✓", params.Name)
+		// params.Logger.Info().Msgf("[%s] ✓", params.Name)
 
 		// write pid to file
 		err = utils.WritePidToFile(params.PidPilePath, process.Pid)
 		if err != nil {
-			params.Logger.Fatal().Msg(err.Error())
+			params.logger.Fatal().Msg(err.Error())
 			process.Kill()
 			return nil
 		}
@@ -147,13 +152,13 @@ func SpawnNewProcess(params SpawnParams) *Process {
 		// detaches the process
 		err = process.Release()
 		if err != nil {
-			params.Logger.Fatal().Msg(err.Error())
+			params.logger.Fatal().Msg(err.Error())
 			return nil
 		}
 
 		return &rpcProcess
 	} else {
-		params.Logger.Fatal().Msg(err.Error())
+		params.logger.Fatal().Msg(err.Error())
 		return nil
 	}
 }

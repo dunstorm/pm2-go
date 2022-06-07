@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/dunstorm/pm2-go/shared"
@@ -43,14 +44,23 @@ var startCmd = &cobra.Command{
 			return
 		}
 
-		// add process to the database
-		process = shared.SpawnNewProcess(shared.SpawnParams{
+		params := shared.SpawnParams{
 			ExecutablePath: args[0],
 			Args:           args[1:],
-			Logger:         logger,
-		})
-		master.GetLogger().Info().Msgf("Applying action addProcessName on app [%s](pid: [ %d ])", process.Name, process.Pid)
-		master.AddProcess(process)
+		}
+		params.SetLogger(logger)
+		err := params.CheckParams()
+		if err != nil {
+			return
+		}
+
+		process = master.StartProcess(&params)
+		if process == nil {
+			logger.Error().Msgf("[%s] x", params.Name)
+			return
+		}
+		fmt.Println(process)
+		logger.Info().Msgf("[%s] ✓", params.Name)
 
 		renderProcessList()
 	},
