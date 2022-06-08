@@ -15,15 +15,23 @@ type Data struct {
 	Cwd            string   `json:"cwd"`
 }
 
-func (app *App) StartFile(filePath string) error {
+func readFileJson(filePath string) ([]Data, error) {
 	// read file
 	content, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var payload []Data
 	err = json.Unmarshal(content, &payload)
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (app *App) StartFile(filePath string) error {
+	payload, err := readFileJson(filePath)
 	if err != nil {
 		return err
 	}
@@ -64,14 +72,7 @@ func (app *App) StartFile(filePath string) error {
 }
 
 func (app *App) StopFile(filePath string) error {
-	// read file
-	content, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-
-	var payload []Data
-	err = json.Unmarshal(content, &payload)
+	payload, err := readFileJson(filePath)
 	if err != nil {
 		return err
 	}
@@ -93,14 +94,7 @@ func (app *App) StopFile(filePath string) error {
 }
 
 func (app *App) DeleteFile(filePath string) error {
-	// read file
-	content, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-
-	var payload []Data
-	err = json.Unmarshal(content, &payload)
+	payload, err := readFileJson(filePath)
 	if err != nil {
 		return err
 	}
@@ -124,14 +118,7 @@ func (app *App) DeleteFile(filePath string) error {
 }
 
 func (app *App) FlushFile(filePath string, flushProcess func(process *shared.Process)) error {
-	// read file
-	content, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
-
-	var payload []Data
-	err = json.Unmarshal(content, &payload)
+	payload, err := readFileJson(filePath)
 	if err != nil {
 		return err
 	}

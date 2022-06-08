@@ -36,7 +36,7 @@ func renderProcessList() {
 	greenBold := color.New(color.FgGreen, color.Bold).SprintFunc()
 	redBold := color.New(color.FgRed, color.Bold).SprintFunc()
 
-	for i, p := range master.ListProcs() {
+	for _, p := range master.ListProcs() {
 		p.UpdateCPUMemory()
 		if p.ProcStatus.Status == "online" {
 			p.ProcStatus.Status = greenBold("online")
@@ -44,7 +44,7 @@ func renderProcessList() {
 			p.ProcStatus.Status = redBold(p.ProcStatus.Status)
 		}
 		t.AppendRow(table.Row{
-			i, p.Name, p.Pid, p.ProcStatus.Status, p.ProcStatus.Uptime, p.ProcStatus.Restarts, p.ProcStatus.CPU, p.ProcStatus.Memory,
+			p.ID, p.Name, p.Pid, p.ProcStatus.Status, p.ProcStatus.Uptime, p.ProcStatus.Restarts, p.ProcStatus.CPU, p.ProcStatus.Memory,
 		})
 	}
 
