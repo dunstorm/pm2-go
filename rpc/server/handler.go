@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dunstorm/pm2-go/shared"
+	"github.com/dunstorm/pm2-go/utils"
 	"github.com/rs/zerolog"
 )
 
@@ -113,8 +114,18 @@ func (api *API) StopProcess(process shared.Process, reply *bool) error {
 		*reply = false
 		return nil
 	}
-	found.GetProcess().Wait()
-	found.SetStatus("stopped")
+
+	go func() {
+		// 2 seconds to wait for process to stop
+		utils.ExitPid(found.Pid, 2*time.Second)
+		found.Pid = 0
+		found.SetStatus("stopped")
+
+		api.mu.Lock()
+		api.database[found.ID] = found
+		api.mu.Unlock()
+	}()
+
 	*reply = true
 	return nil
 }

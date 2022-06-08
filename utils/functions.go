@@ -200,3 +200,27 @@ func PrintLogs(logs []string, logPrefix string, color func(a ...interface{}) str
 		fmt.Println(color(logPrefix), line)
 	}
 }
+
+// exit pid
+func ExitPid(pid int, timeout time.Duration) {
+	var exitState bool
+	var process *os.Process
+	var err error
+loop:
+	for timeout := time.After(timeout); ; {
+		select {
+		case <-timeout:
+			break loop
+		default:
+		}
+		process, err = os.FindProcess(pid)
+		if err != nil {
+			exitState = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !exitState {
+		process.Kill()
+	}
+}

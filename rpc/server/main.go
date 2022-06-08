@@ -30,7 +30,7 @@ func New() {
 	rpc.HandleHTTP()
 
 	// Listen to TPC connections on port 9001
-	listener, e := net.Listen("tcp", ":9001")
+	listener, e := net.Listen("tcp", "localhost:9001")
 	if e != nil {
 		handler.logger.Fatal().Msgf("Listen error: %s", e)
 		return

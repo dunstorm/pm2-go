@@ -85,7 +85,7 @@ func (app *App) StopFile(filePath string) error {
 				app.logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 				app.StopProcess(process)
 			} else {
-				app.logger.Warn().Msgf("App [%s] is already stopped", p.Name)
+				app.logger.Warn().Msgf("App [%s] is not running", p.Name)
 			}
 		}
 	}
