@@ -224,3 +224,16 @@ loop:
 		process.Kill()
 	}
 }
+
+// remove contents of a file
+func RemoveFileContents(filename string) error {
+	var file *os.File
+	var err error
+	file, err = os.OpenFile(filename, os.O_RDWR, 0755)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	file.Truncate(0)
+	return nil
+}

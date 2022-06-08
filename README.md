@@ -36,6 +36,7 @@ Managing apps is straightforward:
 pm2-go stop     <app_name|id|json_conf>
 pm2-go restart  <app_name|id|json_conf>
 pm2-go delete   <app_name|id|json_conf>
+pm2-go flush    <app_name|id|json_conf|'all'>
 ```
 
 To see real-time logs:

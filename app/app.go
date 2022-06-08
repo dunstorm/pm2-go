@@ -33,6 +33,14 @@ func (app *App) createClient() {
 	}
 }
 
+func (app *App) GetDB() []*shared.Process {
+	var db []*shared.Process
+	app.createClient()
+	defer app.client.Close()
+	app.client.Call("API.GetDB", "", &db)
+	return db
+}
+
 func (app *App) AddProcess(process *shared.Process) shared.Process {
 	var reply shared.Process
 	app.createClient()

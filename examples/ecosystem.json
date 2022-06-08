@@ -1,7 +1,7 @@
 [
     {
         "name": "python-test",
-        "args": ["-u", "sigint_fail.py"],
+        "args": ["-u", "test.py"],
         "executablePath": "python",
         "autorestart": false,
         "cwd": "./examples"

@@ -122,3 +122,27 @@ func (app *App) DeleteFile(filePath string) error {
 	}
 	return nil
 }
+
+func (app *App) FlushFile(filePath string, flushProcess func(process *shared.Process)) error {
+	// read file
+	content, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	var payload []Data
+	err = json.Unmarshal(content, &payload)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range payload {
+		var process *shared.Process = app.FindProcess(p.Name)
+		if process.ProcStatus == nil {
+			app.logger.Warn().Msgf("App [%s] not found", p.Name)
+		} else {
+			flushProcess(process)
+		}
+	}
+	return nil
+}
