@@ -85,25 +85,24 @@ func (app *App) StopProcess(process *shared.Process) bool {
 	return reply
 }
 
+func (app *App) RestartProcess(processIndex int) bool {
+	var reply bool
+	app.createClient()
+	defer app.client.Close()
+	err := app.client.Call("API.RestartProcess", processIndex, &reply)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	return reply
+}
+
 func (app *App) UpdateProcess(newProcess *shared.Process) *shared.Process {
 	var reply *shared.Process
 	app.createClient()
 	defer app.client.Close()
 	app.client.Call("API.UpdateProcess", newProcess, &reply)
 	return reply
-}
-
-func (app *App) RestartProcess(process *shared.Process) *shared.Process {
-	app.StopProcess(process)
-	newProcess := shared.SpawnNewProcess(shared.SpawnParams{
-		Name:           process.Name,
-		Args:           process.Args,
-		ExecutablePath: process.ExecutablePath,
-		AutoRestart:    process.AutoRestart,
-		Cwd:            process.Cwd,
-	})
-	process = app.UpdateProcess(newProcess)
-	return process
 }
 
 func (app *App) DeleteProcess(process *shared.Process) {

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/dunstorm/pm2-go/shared"
@@ -39,7 +38,7 @@ var startCmd = &cobra.Command{
 		process := master.FindProcess(args[0])
 		if process.Name != "" {
 			master.GetLogger().Info().Msgf("Applying action startProcessId on app [%d](pid: [ %d ])", process.ID, process.Pid)
-			master.RestartProcess(process)
+			master.RestartProcess(process.ID)
 			renderProcessList()
 			return
 		}
@@ -56,10 +55,9 @@ var startCmd = &cobra.Command{
 
 		process = master.StartProcess(&params)
 		if process == nil {
-			logger.Error().Msgf("[%s] x", params.Name)
+			logger.Error().Msgf("[%s] ✗", params.Name)
 			return
 		}
-		fmt.Println(process)
 		logger.Info().Msgf("[%s] ✓", params.Name)
 
 		renderProcessList()

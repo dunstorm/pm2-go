@@ -103,6 +103,9 @@ func (params *SpawnParams) CheckParams() error {
 }
 
 func SpawnNewProcess(params SpawnParams) *Process {
+	// open log files
+	params.createFiles()
+
 	// create process
 	var attr = os.ProcAttr{
 		Dir: params.Cwd,
@@ -127,8 +130,6 @@ func SpawnNewProcess(params SpawnParams) *Process {
 	process, err := os.StartProcess(params.ExecutablePath, fullCommand, &attr)
 
 	if err == nil {
-		// params.Logger.Info().Msgf("[%s] ✓", params.Name)
-
 		// write pid to file
 		err = utils.WritePidToFile(params.PidPilePath, process.Pid)
 		if err != nil {

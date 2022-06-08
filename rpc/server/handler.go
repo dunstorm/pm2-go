@@ -202,6 +202,49 @@ func (api *API) UpdateProcess(newProcess shared.Process, reply *shared.Process) 
 	return nil
 }
 
+// RestartProcess takes a Process type and restart it
+func (api *API) RestartProcess(processIndex int, reply *bool) error {
+	process := api.database[processIndex]
+
+	if process.ProcStatus.Status == "online" {
+		var stopReply bool
+		api.StopProcessByIndex(process.ID, &stopReply)
+		api.logger.Debug().Msgf("process stopped: %s", process.Name)
+	}
+
+	// set params
+	params := shared.SpawnParams{
+		Name:           process.Name,
+		ExecutablePath: process.ExecutablePath,
+		Args:           process.Args,
+		PidPilePath:    process.PidFilePath,
+		LogFilePath:    process.LogFilePath,
+		ErrFilePath:    process.ErrFilePath,
+		AutoRestart:    process.AutoRestart,
+		Cwd:            process.Cwd,
+	}
+	params.SetLogger(api.logger)
+
+	newProcess := shared.SpawnNewProcess(params)
+	if newProcess == nil {
+		*reply = false
+		return nil
+	}
+	process.InitUptime()
+	process.InitStartedAt()
+	process.SetStatus("online")
+	process.UpdatePid(newProcess.Pid)
+
+	go process.GetProcess().Wait()
+
+	api.mu.Lock()
+	api.database[process.ID] = process
+	api.mu.Unlock()
+
+	*reply = true
+	return nil
+}
+
 // DeleteProcess takes a Process type and deletes it from ProcessArray
 func (api *API) DeleteProcess(process shared.Process, reply *shared.Process) error {
 	var deleted shared.Process

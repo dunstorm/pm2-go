@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/dunstorm/pm2-go/shared"
@@ -38,7 +37,7 @@ func New() {
 	}
 	handler.logger.Info().Msgf("Serving RPC server on port %d", 9001)
 
-	var wg sync.WaitGroup
+	// var wg sync.WaitGroup
 
 	go func() {
 		// check process
@@ -79,14 +78,21 @@ func New() {
 					p.UpdateUptime()
 				}
 			}
-			wg.Done()
+			// wg.Done()
 		}
+		// for {
+		// 	fmt.Println("Number of goroutines:", runtime.NumGoroutine())
+		// 	for index, p := range handler.database {
+		// 		wg.Add(1)
+		// 		go checkUpdateProcess(index, p)
+		// 	}
+		// 	wg.Wait()
+		// 	time.Sleep(1 * time.Second)
+		// }
 		for {
 			for index, p := range handler.database {
-				wg.Add(1)
-				go checkUpdateProcess(index, p)
+				checkUpdateProcess(index, p)
 			}
-			wg.Wait()
 			time.Sleep(1 * time.Second)
 		}
 	}()
