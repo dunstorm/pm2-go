@@ -74,12 +74,14 @@ func (api *API) StopProcessByIndex(processIndex int, reply *bool) error {
 		*reply = false
 		return nil
 	}
-	err := found.Signal(syscall.SIGINT)
+	err := found.Signal(syscall.SIGTERM)
 	if err != nil {
 		api.logger.Info().Msgf("failed to stop process: %s", err.Error())
 		*reply = false
 		return nil
 	}
+	// 2 seconds to wait for process to stop
+	utils.ExitPid(found.Pid, 2*time.Second)
 	*reply = true
 	return nil
 }
@@ -115,16 +117,14 @@ func (api *API) StopProcess(process shared.Process, reply *bool) error {
 		return nil
 	}
 
-	go func() {
-		// 2 seconds to wait for process to stop
-		utils.ExitPid(found.Pid, 2*time.Second)
-		found.Pid = 0
-		found.SetStatus("stopped")
+	// 2 seconds to wait for process to stop
+	utils.ExitPid(found.Pid, 1*time.Second)
+	found.Pid = 0
+	found.SetStatus("stopped")
 
-		api.mu.Lock()
-		api.database[found.ID] = found
-		api.mu.Unlock()
-	}()
+	api.mu.Lock()
+	api.database[found.ID] = found
+	api.mu.Unlock()
 
 	*reply = true
 	return nil

@@ -52,20 +52,20 @@ func (app *App) StartFile(filePath string) error {
 		} else {
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.StopProcessByIndex(process.ID)
+				app.StopProcess(process)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
 			}
 			newProcess := shared.SpawnNewProcess(shared.SpawnParams{
 				Name:           process.Name,
-				Args:           process.Args,
-				ExecutablePath: process.ExecutablePath,
-				AutoRestart:    process.AutoRestart,
+				Args:           p.Args,
+				ExecutablePath: p.ExecutablePath,
+				AutoRestart:    p.AutoRestart,
 				Logger:         app.logger,
-				Cwd:            process.Cwd,
+				Cwd:            p.Cwd,
 			})
 			newProcess.ID = process.ID
-			app.StartProcess(newProcess)
+			app.UpdateProcess(newProcess)
 		}
 	}
 	return nil

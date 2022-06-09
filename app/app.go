@@ -81,7 +81,7 @@ func (app *App) StopProcess(process *shared.Process) bool {
 	return reply
 }
 
-func (app *App) StartProcess(newProcess *shared.Process) *shared.Process {
+func (app *App) UpdateProcess(newProcess *shared.Process) *shared.Process {
 	var reply *shared.Process
 	app.createClient()
 	defer app.client.Close()
@@ -99,7 +99,7 @@ func (app *App) RestartProcess(process *shared.Process) *shared.Process {
 		Logger:         app.logger,
 		Cwd:            process.Cwd,
 	})
-	process = app.StartProcess(newProcess)
+	process = app.UpdateProcess(newProcess)
 	return process
 }
 
