@@ -99,6 +99,7 @@ func (app *App) RestartProcess(process *shared.Process) *shared.Process {
 		Logger:         app.logger,
 		Cwd:            process.Cwd,
 	})
+	newProcess.ID = process.ID
 	process = app.UpdateProcess(newProcess)
 	return process
 }

@@ -5,5 +5,12 @@
         "executablePath": "python",
         "autorestart": false,
         "cwd": "./examples"
+    },
+    {
+        "name": "celery-worker",
+        "args": ["worker"],
+        "executablePath": "celery",
+        "autorestart": false,
+        "cwd": "./examples"
     }
 ]

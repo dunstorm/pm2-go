@@ -23,6 +23,25 @@ var deleteCmd = &cobra.Command{
 
 		logger := master.GetLogger()
 
+		if args[0] == "all" {
+			db := master.GetDB()
+			if len(db) == 0 {
+				logger.Warn().Msg("No processes found")
+				return
+			}
+			for _, process := range db {
+				if process.ProcStatus.Status == "online" {
+					master.GetLogger().Info().Msgf("Applying action stopProcessId on app [%d](pid: [ %d ])", process.ID, process.Pid)
+					master.StopProcess(process)
+				}
+				logger.Info().Msgf("Applying action deleteProcessId on app [%s]", process.Name)
+				master.DeleteProcess(process)
+				logger.Info().Msgf("[%s] ✓", process.Name)
+			}
+			renderProcessList()
+			return
+		}
+
 		// check if args[0] is a file
 		// get file extension
 		// if it's a json file, parse it and start the app

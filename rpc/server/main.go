@@ -16,7 +16,7 @@ func New() {
 	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
 	handler := &API{
 		logger:   &logger,
-		database: make([]shared.Process, 0),
+		database: make(map[int]shared.Process, 0),
 	}
 
 	// Publish the receivers methods

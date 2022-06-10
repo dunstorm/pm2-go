@@ -14,12 +14,16 @@ import (
 
 type API struct {
 	logger   *zerolog.Logger
-	database []shared.Process
+	database map[int]shared.Process
 	mu       sync.Mutex
 }
 
 func (api *API) GetDB(empty string, reply *[]shared.Process) error {
-	*reply = api.database
+	database := make([]shared.Process, len(api.database))
+	for i, v := range api.database {
+		database[i] = v
+	}
+	*reply = database
 	return nil
 }
 
@@ -60,7 +64,7 @@ func (api *API) AddProcess(process shared.Process, reply *shared.Process) error 
 	process.SetProcess(found)
 	process.SetToStop(false)
 	api.mu.Lock()
-	api.database = append(api.database, process)
+	api.database[len(api.database)] = process
 	api.mu.Unlock()
 	*reply = process
 	return nil
@@ -164,12 +168,12 @@ func (api *API) UpdateProcess(newProcess shared.Process, reply *shared.Process) 
 // DeleteProcess takes a Process type and deletes it from ProcessArray
 func (api *API) DeleteProcess(process shared.Process, reply *shared.Process) error {
 	var deleted shared.Process
-	for i, v := range api.database {
+	for _, v := range api.database {
 		if v.Name == process.Name || v.ID == process.ID {
 			// Delete Process by appending the items before it and those
 			// after to the database variable
 			api.mu.Lock()
-			api.database = append(api.database[:i], api.database[i+1:]...)
+			delete(api.database, process.ID)
 			api.mu.Unlock()
 			deleted = process
 			break
