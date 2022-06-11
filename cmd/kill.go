@@ -26,10 +26,10 @@ var killCmd = &cobra.Command{
 		if isRunning {
 			procs := master.ListProcs()
 			if len(procs) > 0 {
-				for _, p := range procs {
+				for index, p := range procs {
 					if p.ProcStatus.Status == "online" {
 						logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", p.Name, p.Pid)
-						master.StopProcessByIndex(p.ID)
+						master.StopProcessByIndex(index)
 					}
 				}
 			} else {

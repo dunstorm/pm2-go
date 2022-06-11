@@ -14,16 +14,12 @@ import (
 
 type API struct {
 	logger   *zerolog.Logger
-	database map[int]shared.Process
+	database []shared.Process
 	mu       sync.Mutex
 }
 
 func (api *API) GetDB(empty string, reply *[]shared.Process) error {
-	database := make([]shared.Process, len(api.database))
-	for i, v := range api.database {
-		database[i] = v
-	}
-	*reply = database
+	*reply = api.database
 	return nil
 }
 
@@ -64,7 +60,7 @@ func (api *API) AddProcess(process shared.Process, reply *shared.Process) error 
 	process.SetProcess(found)
 	process.SetToStop(false)
 	api.mu.Lock()
-	api.database[len(api.database)] = process
+	api.database = append(api.database, process)
 	api.mu.Unlock()
 	*reply = process
 	return nil
@@ -92,9 +88,11 @@ func (api *API) StopProcessByIndex(processIndex int, reply *bool) error {
 
 func (api *API) StopProcess(process shared.Process, reply *bool) error {
 	var found shared.Process
-	for _, p := range api.database {
+	var foundIndex int
+	for i, p := range api.database {
 		if p.Name == process.Name || p.ID == process.ID {
 			found = p
+			foundIndex = i
 			break
 		}
 	}
@@ -127,7 +125,7 @@ func (api *API) StopProcess(process shared.Process, reply *bool) error {
 	found.SetStatus("stopped")
 
 	api.mu.Lock()
-	api.database[found.ID] = found
+	api.database[foundIndex] = found
 	api.mu.Unlock()
 
 	*reply = true
@@ -168,12 +166,12 @@ func (api *API) UpdateProcess(newProcess shared.Process, reply *shared.Process) 
 // DeleteProcess takes a Process type and deletes it from ProcessArray
 func (api *API) DeleteProcess(process shared.Process, reply *shared.Process) error {
 	var deleted shared.Process
-	for _, v := range api.database {
+	for i, v := range api.database {
 		if v.Name == process.Name || v.ID == process.ID {
 			// Delete Process by appending the items before it and those
 			// after to the database variable
 			api.mu.Lock()
-			delete(api.database, process.ID)
+			api.database = append(api.database[:i], api.database[i+1:]...)
 			api.mu.Unlock()
 			deleted = process
 			break
