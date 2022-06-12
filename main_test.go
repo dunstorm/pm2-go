@@ -1,20 +1,16 @@
 package main
 
 import (
-	"os/exec"
-	"strings"
 	"testing"
 
 	"github.com/dunstorm/pm2-go/app"
+	"github.com/dunstorm/pm2-go/utils"
 	"github.com/rs/zerolog"
 )
 
 func isServerRunning() bool {
-	out, err := exec.Command("./bin/main", "status").CombinedOutput()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), "PM2 Daemon Running")
+	// check if 9001 is open
+	return utils.IsPortOpen(9001)
 }
 
 func isProcessAdded(master *app.App, name string) bool {

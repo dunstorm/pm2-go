@@ -2,9 +2,11 @@ package utils
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"path"
 	"strconv"
@@ -22,9 +24,8 @@ func NewLogger() *zerolog.Logger {
 	return &logger
 }
 
-// implement isProcessRunning
+// check if process is running by pid
 func IsProcessRunning(pid int) (*os.Process, bool) {
-	// check if process is running by pid
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return nil, false
@@ -36,6 +37,26 @@ func IsProcessRunning(pid int) (*os.Process, bool) {
 	return process, true
 }
 
+// get pm2-go main directory
+func GetMainDirectory() string {
+	dirname, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	// add pm2-go directory
+	dirname = dirname + "/.pm2-go"
+	// if dirname doesnt exist create it
+	if _, err := os.Stat(dirname); os.IsNotExist(err) {
+		os.Mkdir(dirname, 0755)
+		os.Mkdir(dirname+"/pids", 0755)
+		os.Mkdir(dirname+"/logs", 0755)
+	}
+	// return dirname
+	return dirname
+}
+
+// read pid file
 func ReadPidFile(pidFileName string) (int, error) {
 	// read daemon.pid using go
 	fileIO, err := os.OpenFile(path.Join(GetMainDirectory(), pidFileName), os.O_RDONLY, 0644)
@@ -55,30 +76,11 @@ func ReadPidFile(pidFileName string) (int, error) {
 	return val, nil
 }
 
-func GetMainDirectory() string {
-	dirname, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	// add pm2-go directory
-	dirname = dirname + "/.pm2-go"
-	// if dirname doesnt exist create it
-	if _, err := os.Stat(dirname); os.IsNotExist(err) {
-		os.Mkdir(dirname, 0755)
-		os.Mkdir(dirname+"/pids", 0755)
-		os.Mkdir(dirname+"/logs", 0755)
-	}
-	// return dirname
-	return dirname
-}
-
+// write pid to a file
 func WritePidToFile(pidFilePath string, pid int) error {
 	var fileIO *os.File
 	var err error
 	fileIO, err = os.OpenFile(pidFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
-
-	// write pid file
 	if err != nil {
 		return err
 	}
@@ -94,30 +96,7 @@ func StringContains(s string, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-func CopyFile(src string, dst string) error {
-	// copy file to /tmp
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-	_, err = io.Copy(dstFile, srcFile)
-	if err != nil {
-		return err
-	}
-	// Change permissions Linux.
-	err = os.Chmod(dst, 0777)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
+// tail a file
 func Tail(logPrefix string, prefixColor func(a ...interface{}) string, filename string, out io.Writer) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -165,6 +144,7 @@ func Tail(logPrefix string, prefixColor func(a ...interface{}) string, filename 
 	}
 }
 
+// get last modified time of a file
 func GetLastModified(filename string) time.Time {
 	info, err := os.Stat(filename)
 	if err != nil {
@@ -173,6 +153,7 @@ func GetLastModified(filename string) time.Time {
 	return info.ModTime()
 }
 
+// given path, get first n lines of file
 func GetLogs(filename string, n int) ([]string, error) {
 	var lines []string
 	file, err := os.Open(filename)
@@ -233,5 +214,55 @@ func RemoveFileContents(filename string) error {
 	}
 	defer file.Close()
 	file.Truncate(0)
+	return nil
+}
+
+// check if port is open
+func IsPortOpen(port int) bool {
+	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	return true
+}
+
+// get dump file path
+func GetDumpFilePath() string {
+	return os.Getenv("HOME") + "/.pm2-go/dump.json"
+}
+
+// dump the current processses to a file
+func SaveObject(filename string, object interface{}) error {
+	var file *os.File
+	var err error
+	file, err = os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	err = encoder.Encode(object)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// load a file into a object
+func LoadObject(filename string, object interface{}) error {
+	var file *os.File
+	var err error
+	file, err = os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(object)
+	if err != nil {
+		return err
+	}
 	return nil
 }

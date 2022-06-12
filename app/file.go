@@ -133,3 +133,38 @@ func (app *App) FlushFile(filePath string, flushProcess func(process *shared.Pro
 	}
 	return nil
 }
+
+func (app *App) RestoreProcess(allProcesses []*shared.Process) {
+	for _, p := range allProcesses {
+		var process *shared.Process
+		process = app.FindProcess(p.Name)
+		if process.ProcStatus == nil {
+			process = shared.SpawnNewProcess(shared.SpawnParams{
+				Name:           p.Name,
+				Args:           p.Args,
+				ExecutablePath: p.ExecutablePath,
+				AutoRestart:    p.AutoRestart,
+				Logger:         app.logger,
+				Cwd:            p.Cwd,
+			})
+			app.AddProcess(process)
+		} else {
+			if process.ProcStatus.Status == "online" {
+				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
+				app.StopProcess(process)
+			} else {
+				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
+			}
+			newProcess := shared.SpawnNewProcess(shared.SpawnParams{
+				Name:           process.Name,
+				Args:           p.Args,
+				ExecutablePath: p.ExecutablePath,
+				AutoRestart:    p.AutoRestart,
+				Logger:         app.logger,
+				Cwd:            p.Cwd,
+			})
+			newProcess.ID = process.ID
+			app.UpdateProcess(newProcess)
+		}
+	}
+}

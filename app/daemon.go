@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -38,15 +37,6 @@ const (
 
 func wasReborn() bool {
 	return os.Getenv(MARK_NAME) == MARK_VALUE
-}
-
-func isPortOpen(port int) bool {
-	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
-	return true
 }
 
 func (app *App) SpawnDaemon() {
@@ -127,7 +117,7 @@ func (app *App) SpawnDaemon() {
 		// wait for 9001 port to open with a timeout of 2s
 		found := false
 		for i := 0; i < 200; i++ {
-			if isPortOpen(9001) {
+			if utils.IsPortOpen(9001) {
 				found = true
 				break
 			}

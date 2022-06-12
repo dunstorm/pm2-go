@@ -45,6 +45,18 @@ To see real-time logs:
 pm2-go logs <app_name|id>
 ```
 
+To dump all processes
+
+```
+pm2-go dump
+```
+
+To restore all processes
+
+```
+pm2-go restore
+```
+
 ## TODO
 
 - [ ] Add tests

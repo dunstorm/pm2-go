@@ -24,6 +24,11 @@ kill:
 logs:
 	./bin/main logs python-test
 
-testindex:
-	./bin/main start celery worker
-	./bin/main stop 0
+test:
+	go test -v
+
+dump:
+	./bin/main dump
+
+restore:
+	./bin/main restore
