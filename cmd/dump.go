@@ -5,6 +5,8 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"strings"
+
 	"github.com/dunstorm/pm2-go/shared"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/spf13/cobra"
@@ -16,6 +18,16 @@ var dumpCmd = &cobra.Command{
 	Short: "dump all processes for resurrecting them later",
 	Long:  `dump all processes for resurrecting them later`,
 	Run: func(cmd *cobra.Command, args []string) {
+		dumpFileName := "dump.json"
+		if len(args) > 0 {
+			dumpFileName = args[0]
+		}
+
+		// add .json if not exists
+		if !strings.HasSuffix(dumpFileName, ".json") {
+			dumpFileName = dumpFileName + ".json"
+		}
+
 		master.SpawnDaemon()
 		logger := master.GetLogger()
 		logger.Info().Msg("Saving current process list...")
@@ -23,7 +35,7 @@ var dumpCmd = &cobra.Command{
 		for _, process := range master.GetDB() {
 			allProcesses = append(allProcesses, *process)
 		}
-		dumpFilePath := utils.GetDumpFilePath()
+		dumpFilePath := utils.GetDumpFilePath(dumpFileName)
 		err := utils.SaveObject(dumpFilePath, allProcesses)
 		if err != nil {
 			logger.Error().Msg(err.Error())

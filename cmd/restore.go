@@ -5,6 +5,8 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"strings"
+
 	"github.com/dunstorm/pm2-go/shared"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/spf13/cobra"
@@ -17,13 +19,25 @@ var restoreCmd = &cobra.Command{
 	Long:  `restore previously dumped processes`,
 	Run: func(cmd *cobra.Command, args []string) {
 		logger := master.GetLogger()
+
+		dumpFileName := "dump.json"
+		if len(args) > 0 {
+			dumpFileName = args[0]
+		}
+
+		// add .json if not exists
+		if !strings.HasSuffix(dumpFileName, ".json") {
+			dumpFileName = dumpFileName + ".json"
+		}
+		dumpFilePath := utils.GetDumpFilePath(dumpFileName)
+
 		allProcesses := []*shared.Process{}
-		err := utils.LoadObject(utils.GetDumpFilePath(), &allProcesses)
+		err := utils.LoadObject(dumpFilePath, &allProcesses)
 		if err != nil {
 			logger.Error().Msg(err.Error())
 			return
 		}
-		logger.Info().Msgf("Restoring processes located in %s", utils.GetDumpFilePath())
+		logger.Info().Msgf("Restoring processes located in %s", dumpFilePath)
 		master.RestoreProcess(allProcesses)
 		renderProcessList()
 	},
