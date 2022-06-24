@@ -32,3 +32,6 @@ dump:
 
 restore:
 	./bin/main restore
+
+flush:
+	./bin/main flush

@@ -19,10 +19,6 @@ var flushCmd = &cobra.Command{
 	Long:  `flush logs`,
 	Run: func(cmd *cobra.Command, args []string) {
 		master.SpawnDaemon()
-		if len(args) < 1 {
-			cmd.Usage()
-			return
-		}
 
 		logger := master.GetLogger()
 
@@ -35,7 +31,7 @@ var flushCmd = &cobra.Command{
 			utils.RemoveFileContents(process.ErrFilePath)
 		}
 
-		if args[0] == "all" {
+		if len(args) == 0 || args[0] == "all" {
 			db := master.GetDB()
 			if len(db) == 0 {
 				logger.Warn().Msg("No processes found")

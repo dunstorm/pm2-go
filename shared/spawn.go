@@ -81,27 +81,34 @@ func (params *SpawnParams) checkScripts() {
 }
 
 // pipe each script to the process
-func createPipedProcesses(params *SpawnParams, logsRead *os.File, logsWrite *os.File) error {
+func createPipedProcesses(params *SpawnParams, stdoutLogsRead *os.File, stderrLogsRead *os.File, stdoutLogsWrite *os.File, stderrLogsWrite *os.File) error {
 	var err error
-	var newLogsRead *os.File
+	var newStdoutLogsRead *os.File
+	var newErrorLogsRead *os.File
 	for index, script := range params.Scripts {
 		scriptPath := path.Join(utils.GetMainDirectory(), "scripts", script+".sh")
 		if index == len(params.Scripts)-1 {
-			logsWrite = params.logFile
+			stdoutLogsWrite = params.logFile
+			stderrLogsWrite = params.errFile
 		} else {
-			newLogsRead, logsWrite, err = os.Pipe()
+			newStdoutLogsRead, stdoutLogsWrite, err = os.Pipe()
+			if err != nil {
+				params.Logger.Fatal().Msg(err.Error())
+				return err
+			}
+			newErrorLogsRead, stderrLogsWrite, err = os.Pipe()
 			if err != nil {
 				params.Logger.Fatal().Msg(err.Error())
 				return err
 			}
 		}
-		// start piped process
+		// start stdout piped process
 		_, err := os.StartProcess("/bin/sh", []string{"/bin/sh", scriptPath}, &os.ProcAttr{
 			Dir: params.Cwd,
 			Env: os.Environ(),
 			Files: []*os.File{
-				logsRead,
-				logsWrite,
+				stdoutLogsRead,
+				stdoutLogsWrite,
 				params.nullFile,
 			},
 			Sys: &syscall.SysProcAttr{
@@ -112,8 +119,26 @@ func createPipedProcesses(params *SpawnParams, logsRead *os.File, logsWrite *os.
 			params.Logger.Fatal().Msg(err.Error())
 			return err
 		}
-		if newLogsRead != nil {
-			logsRead = newLogsRead
+		// start stderr piped process
+		_, err = os.StartProcess("/bin/sh", []string{"/bin/sh", scriptPath}, &os.ProcAttr{
+			Dir: params.Cwd,
+			Env: os.Environ(),
+			Files: []*os.File{
+				stderrLogsRead,
+				stderrLogsWrite,
+				params.nullFile,
+			},
+			Sys: &syscall.SysProcAttr{
+				Foreground: false,
+			},
+		})
+		if err != nil {
+			params.Logger.Fatal().Msg(err.Error())
+			return err
+		}
+		if newStdoutLogsRead != nil {
+			stdoutLogsRead = newStdoutLogsRead
+			stderrLogsRead = newErrorLogsRead
 		}
 	}
 	return nil
@@ -145,14 +170,25 @@ func SpawnNewProcess(params SpawnParams) *Process {
 		return nil
 	}
 
-	var logsWrite *os.File
-	var logsRead *os.File
+	var stdoutLogsWrite *os.File
+	var stdoutLogsRead *os.File
+
+	var stderrLogsWrite *os.File
+	var stderrLogsRead *os.File
 
 	if len(params.Scripts) == 0 {
-		logsWrite = params.logFile
+		stdoutLogsWrite = params.logFile
+		stderrLogsWrite = params.errFile
 	} else {
-		// create initial pipe
-		logsRead, logsWrite, err = os.Pipe()
+		// create initial stdout pipe
+		stdoutLogsRead, stdoutLogsWrite, err = os.Pipe()
+		if err != nil {
+			params.Logger.Fatal().Msg(err.Error())
+			return nil
+		}
+
+		// create initial err pipe
+		stderrLogsRead, stderrLogsWrite, err = os.Pipe()
 		if err != nil {
 			params.Logger.Fatal().Msg(err.Error())
 			return nil
@@ -162,8 +198,8 @@ func SpawnNewProcess(params SpawnParams) *Process {
 		params.checkScripts()
 	}
 
-	defer logsRead.Close()
-	defer logsWrite.Close()
+	defer stdoutLogsRead.Close()
+	defer stdoutLogsWrite.Close()
 
 	// create process
 	var attr = os.ProcAttr{
@@ -171,8 +207,8 @@ func SpawnNewProcess(params SpawnParams) *Process {
 		Env: os.Environ(),
 		Files: []*os.File{
 			params.nullFile,
-			logsWrite,
-			params.errFile,
+			stdoutLogsWrite,
+			stderrLogsWrite,
 		},
 		Sys: &syscall.SysProcAttr{
 			Foreground: false,
@@ -192,7 +228,7 @@ func SpawnNewProcess(params SpawnParams) *Process {
 		return nil
 	}
 
-	err = createPipedProcesses(&params, logsRead, logsWrite)
+	err = createPipedProcesses(&params, stdoutLogsRead, stderrLogsRead, stdoutLogsWrite, stderrLogsWrite)
 	if err != nil {
 		params.Logger.Fatal().Msg(err.Error())
 		return nil
