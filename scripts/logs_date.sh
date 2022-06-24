@@ -1,4 +1,4 @@
 #!/bin/bash
-while read line; do
+while IFS= read -r line; do
 	echo "$(date): ${line}"
 done
