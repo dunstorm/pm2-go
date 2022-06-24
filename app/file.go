@@ -13,6 +13,7 @@ type Data struct {
 	ExecutablePath string   `json:"executablePath"`
 	AutoRestart    bool     `json:"autorestart"`
 	Cwd            string   `json:"cwd"`
+	Scripts        []string `json:"scripts"`
 }
 
 func readFileJson(filePath string) ([]Data, error) {
@@ -47,6 +48,7 @@ func (app *App) StartFile(filePath string) error {
 				AutoRestart:    p.AutoRestart,
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
+				Scripts:        p.Scripts,
 			})
 			app.AddProcess(process)
 		} else {
@@ -63,6 +65,7 @@ func (app *App) StartFile(filePath string) error {
 				AutoRestart:    p.AutoRestart,
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
+				Scripts:        p.Scripts,
 			})
 			newProcess.ID = process.ID
 			app.UpdateProcess(newProcess)
@@ -146,6 +149,7 @@ func (app *App) RestoreProcess(allProcesses []*shared.Process) {
 				AutoRestart:    p.AutoRestart,
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
+				Scripts:        p.Scripts,
 			})
 			app.AddProcess(process)
 		} else {
@@ -162,6 +166,7 @@ func (app *App) RestoreProcess(allProcesses []*shared.Process) {
 				AutoRestart:    p.AutoRestart,
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
+				Scripts:        p.Scripts,
 			})
 			newProcess.ID = process.ID
 			app.UpdateProcess(newProcess)

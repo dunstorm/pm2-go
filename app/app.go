@@ -98,6 +98,7 @@ func (app *App) RestartProcess(process *shared.Process) *shared.Process {
 		AutoRestart:    process.AutoRestart,
 		Logger:         app.logger,
 		Cwd:            process.Cwd,
+		Scripts:        process.Scripts,
 	})
 	newProcess.ID = process.ID
 	process = app.UpdateProcess(newProcess)

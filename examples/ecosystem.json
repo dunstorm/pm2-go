@@ -2,15 +2,9 @@
     {
         "name": "python-test",
         "args": ["-u", "test.py"],
-        "executablePath": "python",
         "autorestart": false,
-        "cwd": "./examples"
-    },
-    {
-        "name": "celery-worker",
-        "args": ["worker"],
-        "executablePath": "celery",
-        "autorestart": false,
-        "cwd": "./examples"
+        "cwd": "./examples",
+        "scripts": ["logs_date"],
+        "executablePath": "python3"
     }
 ]

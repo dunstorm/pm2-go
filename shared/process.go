@@ -23,6 +23,7 @@ type Process struct {
 	ID             int
 	Name           string
 	Args           []string
+	Scripts        []string
 	ExecutablePath string
 	Pid            int
 	AutoRestart    bool

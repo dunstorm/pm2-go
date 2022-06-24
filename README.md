@@ -57,9 +57,29 @@ To restore all processes
 pm2-go restore
 ```
 
-## TODO
+## Extend Logs
 
-- [ ] Add tests
-- [ ] Add namespace feature
-- [ ] Add info command
-- [ ] Add load balancer??
+Logs can be extended by using `scripts` placed in `$HOME/.pm2-go/scripts`.
+
+To leverage the use of `scripts`, specify the `scripts` inside `.json` file containing processes
+
+e.g.
+
+```json
+[
+    {
+        "name": "python-test",
+        "args": ["-u", "test.py"],
+        "autorestart": true,
+        "cwd": "./examples",
+        "scripts": ["logs_date"],
+        "executablePath": "python3"
+    }
+]
+```
+
+Example script: [logs_date.sh](https://github.com/dunstorm/pm2-go/blob/main/scripts/logs_date.sh)
+
+It adds corresponding date & time to each line from the process output
+
+![](https://i.imgur.com/UFw9PpX.png)

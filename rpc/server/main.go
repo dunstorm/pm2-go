@@ -59,6 +59,7 @@ func New() {
 								AutoRestart:    p.AutoRestart,
 								Cwd:            p.Cwd,
 								Logger:         handler.logger,
+								Scripts:        p.Scripts,
 							})
 
 							p.Pid = newProcess.Pid
