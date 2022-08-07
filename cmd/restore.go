@@ -7,7 +7,7 @@ package cmd
 import (
 	"strings"
 
-	"github.com/dunstorm/pm2-go/shared"
+	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +31,7 @@ var restoreCmd = &cobra.Command{
 		}
 		dumpFilePath := utils.GetDumpFilePath(dumpFileName)
 
-		allProcesses := []*shared.Process{}
+		allProcesses := []*pb.Process{}
 		err := utils.LoadObject(dumpFilePath, &allProcesses)
 		if err != nil {
 			logger.Error().Msg(err.Error())

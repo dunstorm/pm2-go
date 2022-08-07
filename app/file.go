@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 
+	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/shared"
 )
 
@@ -38,10 +39,11 @@ func (app *App) StartFile(filePath string) error {
 	}
 
 	for _, p := range payload {
-		var process *shared.Process
+		var process *pb.Process
+		var err error
 		process = app.FindProcess(p.Name)
-		if process.ProcStatus == nil {
-			process = shared.SpawnNewProcess(shared.SpawnParams{
+		if process == nil {
+			process, err = shared.SpawnNewProcess(shared.SpawnParams{
 				Name:           p.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
@@ -50,15 +52,18 @@ func (app *App) StartFile(filePath string) error {
 				Cwd:            p.Cwd,
 				Scripts:        p.Scripts,
 			})
+			if err != nil {
+				app.logger.Fatal().Msgf("Error while starting process [%s]", p.Name)
+			}
 			app.AddProcess(process)
 		} else {
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.StopProcess(process)
+				app.StopProcess(process.Id)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
 			}
-			newProcess := shared.SpawnNewProcess(shared.SpawnParams{
+			newProcess, err := shared.SpawnNewProcess(shared.SpawnParams{
 				Name:           process.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
@@ -67,8 +72,11 @@ func (app *App) StartFile(filePath string) error {
 				Cwd:            p.Cwd,
 				Scripts:        p.Scripts,
 			})
-			newProcess.ID = process.ID
-			app.UpdateProcess(newProcess)
+			if err != nil {
+				app.logger.Fatal().Msgf("Error while starting process [%s]", p.Name)
+			}
+			newProcess.Id = process.Id
+			app.StartProcess(newProcess)
 		}
 	}
 	return nil
@@ -81,13 +89,13 @@ func (app *App) StopFile(filePath string) error {
 	}
 
 	for _, p := range payload {
-		var process *shared.Process = app.FindProcess(p.Name)
-		if process.ProcStatus == nil {
+		var process *pb.Process = app.FindProcess(p.Name)
+		if process == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.StopProcess(process)
+				app.StopProcess(process.Id)
 			} else {
 				app.logger.Warn().Msgf("App [%s] is not running", p.Name)
 			}
@@ -103,13 +111,13 @@ func (app *App) DeleteFile(filePath string) error {
 	}
 
 	for _, p := range payload {
-		var process *shared.Process = app.FindProcess(p.Name)
+		var process *pb.Process = app.FindProcess(p.Name)
 		if process.ProcStatus == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.StopProcess(process)
+				app.StopProcess(process.Id)
 			}
 			app.logger.Info().Msgf("Applying action deleteProcessId on app [%s]", process.Name)
 			app.DeleteProcess(process)
@@ -120,14 +128,14 @@ func (app *App) DeleteFile(filePath string) error {
 	return nil
 }
 
-func (app *App) FlushFile(filePath string, flushProcess func(process *shared.Process)) error {
+func (app *App) FlushFile(filePath string, flushProcess func(process *pb.Process)) error {
 	payload, err := readFileJson(filePath)
 	if err != nil {
 		return err
 	}
 
 	for _, p := range payload {
-		var process *shared.Process = app.FindProcess(p.Name)
+		var process *pb.Process = app.FindProcess(p.Name)
 		if process.ProcStatus == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
@@ -137,12 +145,12 @@ func (app *App) FlushFile(filePath string, flushProcess func(process *shared.Pro
 	return nil
 }
 
-func (app *App) RestoreProcess(allProcesses []*shared.Process) {
+func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 	for _, p := range allProcesses {
-		var process *shared.Process
+		var process *pb.Process
 		process = app.FindProcess(p.Name)
 		if process.ProcStatus == nil {
-			process = shared.SpawnNewProcess(shared.SpawnParams{
+			process, err := shared.SpawnNewProcess(shared.SpawnParams{
 				Name:           p.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
@@ -151,15 +159,18 @@ func (app *App) RestoreProcess(allProcesses []*shared.Process) {
 				Cwd:            p.Cwd,
 				Scripts:        p.Scripts,
 			})
+			if err != nil {
+				app.logger.Fatal().Msgf("Error while restoring process [%s]", p.Name)
+			}
 			app.AddProcess(process)
 		} else {
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.StopProcess(process)
+				app.StopProcess(process.Id)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
 			}
-			newProcess := shared.SpawnNewProcess(shared.SpawnParams{
+			newProcess, err := shared.SpawnNewProcess(shared.SpawnParams{
 				Name:           process.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
@@ -168,8 +179,11 @@ func (app *App) RestoreProcess(allProcesses []*shared.Process) {
 				Cwd:            p.Cwd,
 				Scripts:        p.Scripts,
 			})
-			newProcess.ID = process.ID
-			app.UpdateProcess(newProcess)
+			if err != nil {
+				app.logger.Fatal().Msgf("Error while restoring process [%s]", err.Error())
+			}
+			newProcess.Id = process.Id
+			app.StartProcess(newProcess)
 		}
 	}
 }

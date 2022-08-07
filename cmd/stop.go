@@ -25,14 +25,14 @@ var stopCmd = &cobra.Command{
 		logger := master.GetLogger()
 
 		if args[0] == "all" {
-			db := master.GetDB()
+			db := master.ListProcess()
 			if len(db) == 0 {
 				logger.Warn().Msg("No processes found")
 				return
 			}
 			for _, process := range db {
-				master.GetLogger().Info().Msgf("Applying action stopProcessId on app [%d](pid: [ %d ])", process.ID, process.Pid)
-				master.StopProcess(process)
+				master.GetLogger().Info().Msgf("Applying action stopProcessId on app [%d](pid: [ %d ])", process.Id, process.Pid)
+				master.StopProcess(process.Id)
 			}
 			renderProcessList()
 			return
@@ -53,13 +53,13 @@ var stopCmd = &cobra.Command{
 
 		// if you can find the app in the database, start it
 		process := master.FindProcess(args[0])
-		if process.Name == "" {
+		if process == nil {
 			logger.Error().Msgf("Process or namespace %s not found", args[0])
 			return
 		}
 
 		logger.Info().Msgf("Applying action stopProcessId on app [%s]", process.Name)
-		master.StopProcess(process)
+		master.StopProcess(process.Id)
 		renderProcessList()
 	},
 }

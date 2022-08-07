@@ -24,15 +24,15 @@ var deleteCmd = &cobra.Command{
 		logger := master.GetLogger()
 
 		if args[0] == "all" {
-			db := master.GetDB()
+			db := master.ListProcess()
 			if len(db) == 0 {
 				logger.Warn().Msg("No processes found")
 				return
 			}
 			for _, process := range db {
 				if process.ProcStatus.Status == "online" {
-					master.GetLogger().Info().Msgf("Applying action stopProcessId on app [%d](pid: [ %d ])", process.ID, process.Pid)
-					master.StopProcess(process)
+					master.GetLogger().Info().Msgf("Applying action stopProcessId on app [%d](pid: [ %d ])", process.Id, process.Pid)
+					master.StopProcess(process.Id)
 				}
 				logger.Info().Msgf("Applying action deleteProcessId on app [%s]", process.Name)
 				master.DeleteProcess(process)
@@ -64,7 +64,7 @@ var deleteCmd = &cobra.Command{
 		// stop process if alive
 		if process.ProcStatus.Status == "online" {
 			logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-			master.StopProcess(process)
+			master.StopProcess(process.Id)
 		}
 
 		// delete a process

@@ -25,8 +25,8 @@ func NewLogger() *zerolog.Logger {
 }
 
 // check if process is running by pid
-func IsProcessRunning(pid int) (*os.Process, bool) {
-	process, err := os.FindProcess(pid)
+func IsProcessRunning(pid int32) (*os.Process, bool) {
+	process, err := os.FindProcess(int(pid))
 	if err != nil {
 		return nil, false
 	}
@@ -57,7 +57,7 @@ func GetMainDirectory() string {
 }
 
 // read pid file
-func ReadPidFile(pidFileName string) (int, error) {
+func ReadPidFile(pidFileName string) (int32, error) {
 	// read daemon.pid using go
 	fileIO, err := os.OpenFile(path.Join(GetMainDirectory(), pidFileName), os.O_RDONLY, 0644)
 	if err != nil {
@@ -73,7 +73,7 @@ func ReadPidFile(pidFileName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return val, nil
+	return int32(val), nil
 }
 
 // write pid to a file
@@ -183,7 +183,7 @@ func PrintLogs(logs []string, logPrefix string, color func(a ...interface{}) str
 }
 
 // exit pid
-func ExitPid(pid int, timeout time.Duration) {
+func ExitPid(pid int32, timeout time.Duration) {
 	var exitState bool
 	var process *os.Process
 	var ok bool
@@ -265,4 +265,14 @@ func LoadObject(filename string, object interface{}) error {
 		return err
 	}
 	return nil
+}
+
+// get process
+func GetProcess(pid int32) (*os.Process, bool) {
+	return IsProcessRunning(pid)
+}
+
+// check if process is child process
+func IsChildProcess(process *os.Process) bool {
+	return process.Pid == os.Getpid()
 }

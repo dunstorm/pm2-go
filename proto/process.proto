@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+package proto;
+
+option go_package = ".";
+
+service ProcessManager {
+    rpc AddProcess (AddProcessRequest) returns (Process) {}
+    rpc StartProcess (StartProcessRequest) returns (Process) {}
+    rpc StopProcess (StopProcessRequest) returns (StopProcessResponse) {}
+    rpc FindProcess (FindProcessRequest) returns (Process) {}
+    rpc DeleteProcess (DeleteProcessRequest) returns (DeleteProcessResponse) {}
+    rpc ListProcess (ListProcessRequest) returns (ListProcessResponse) {}
+    rpc SpawnProcess (SpawnProcessRequest) returns (SpawnProcessResponse) {}
+}
+
+message ProcStatus {
+    string status = 1;
+    google.protobuf.Timestamp started_at = 2;
+    google.protobuf.Duration  uptime   = 3;
+    int32  restarts   = 4;
+    string cpu = 5;
+    string memory = 6;
+    int32 parent_pid = 7;
+}
+
+message Process {
+    int32 id = 1;
+    string name = 2;
+    repeated string args = 3;
+    repeated string scripts = 4;
+    string executable_path = 5;
+    int32 pid = 6;
+    bool auto_restart = 7;
+    string cwd = 8;
+    string pid_file_path = 9;
+    string log_file_path = 10;
+    string err_file_path = 11;
+    string cron_expression = 12;
+    
+    ProcStatus proc_status = 14;
+    bool stop_next = 15;
+}
+
+message AddProcessRequest {
+    string name = 2;
+    repeated string args = 3;
+    repeated string scripts = 4;
+    string executable_path = 5;
+    int32 pid = 6;
+    bool auto_restart = 7;
+    string cwd = 8;
+    string pid_file_path = 9;
+    string log_file_path = 10;
+    string err_file_path = 11;
+    string cron_expression = 12;
+}
+
+message FindProcessRequest {
+    string name = 1;
+}
+
+message StopProcessRequest {
+    string name = 1;
+    int32 id = 2;
+}
+
+message StopProcessResponse {
+    bool success = 1;
+}
+
+message StartProcessRequest {
+    int32 id = 1;
+    string name = 2;
+    repeated string args = 3;
+    repeated string scripts = 4;
+    string executable_path = 5;
+    int32 pid = 6;
+    bool auto_restart = 7;
+    string cwd = 8;
+    string pid_file_path = 9;
+    string log_file_path = 10;
+    string err_file_path = 11;
+    string cron_expression = 12;
+}
+
+message ListProcessRequest {}
+
+message ListProcessResponse {
+    repeated Process processes = 1;
+}
+
+message DeleteProcessRequest {
+    int32 id = 1;
+}
+
+message DeleteProcessResponse {
+    bool success = 1;
+}
+
+message SpawnProcessRequest {
+    string name = 1;
+    repeated string args = 2;
+    repeated string scripts = 3;
+    string executable_path = 4;
+    bool auto_restart = 6;
+    string cwd = 7;
+    string cron_expression = 11;
+}
+
+message SpawnProcessResponse {
+    bool success = 1;
+}

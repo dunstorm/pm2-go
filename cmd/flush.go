@@ -7,7 +7,7 @@ package cmd
 import (
 	"os"
 
-	"github.com/dunstorm/pm2-go/shared"
+	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/spf13/cobra"
 )
@@ -22,7 +22,7 @@ var flushCmd = &cobra.Command{
 
 		logger := master.GetLogger()
 
-		flushProcess := func(process *shared.Process) {
+		flushProcess := func(process *pb.Process) {
 			logger.Info().Msg(process.LogFilePath)
 			logger.Info().Msg(process.ErrFilePath)
 
@@ -32,7 +32,7 @@ var flushCmd = &cobra.Command{
 		}
 
 		if len(args) == 0 || args[0] == "all" {
-			db := master.GetDB()
+			db := master.ListProcess()
 			if len(db) == 0 {
 				logger.Warn().Msg("No processes found")
 				return

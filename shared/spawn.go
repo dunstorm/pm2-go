@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/rs/zerolog"
 )
@@ -144,30 +145,27 @@ func createPipedProcesses(params *SpawnParams, stdoutLogsRead *os.File, stderrLo
 	return nil
 }
 
-func SpawnNewProcess(params SpawnParams) *Process {
+func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	// validate params
 	err := params.fillDefaults()
 	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		return nil, err
 	}
 
 	splitExecutablePath := strings.Split(params.ExecutablePath, "/")
-	if splitExecutablePath[len(splitExecutablePath)-1] == "python" && params.Args[0] != "-u" {
+	if splitExecutablePath[len(splitExecutablePath)-1] == "python" && len(params.Args) > 0 && params.Args[0] != "-u" {
 		params.Logger.Warn().Msg("Add -u flag to prevent output buffering on python")
 	}
 
 	// create files
 	err = params.createFiles()
 	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		return nil, err
 	}
 
 	params.ExecutablePath, err = exec.LookPath(params.ExecutablePath)
 	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		return nil, err
 	}
 
 	var stdoutLogsWrite *os.File
@@ -183,15 +181,13 @@ func SpawnNewProcess(params SpawnParams) *Process {
 		// create initial stdout pipe
 		stdoutLogsRead, stdoutLogsWrite, err = os.Pipe()
 		if err != nil {
-			params.Logger.Fatal().Msg(err.Error())
-			return nil
+			return nil, err
 		}
 
 		// create initial err pipe
 		stderrLogsRead, stderrLogsWrite, err = os.Pipe()
 		if err != nil {
-			params.Logger.Fatal().Msg(err.Error())
-			return nil
+			return nil, err
 		}
 
 		// check if scripts exist
@@ -224,14 +220,12 @@ func SpawnNewProcess(params SpawnParams) *Process {
 
 	process, err := os.StartProcess(params.ExecutablePath, fullCommand, &attr)
 	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		return nil, err
 	}
 
 	err = createPipedProcesses(&params, stdoutLogsRead, stderrLogsRead, stdoutLogsWrite, stderrLogsWrite)
 	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		return nil, err
 	}
 
 	params.Logger.Info().Msgf("[%s] ✓", params.Name)
@@ -241,13 +235,13 @@ func SpawnNewProcess(params SpawnParams) *Process {
 	if err != nil {
 		params.Logger.Fatal().Msg(err.Error())
 		process.Kill()
-		return nil
+		return nil, err
 	}
 
-	rpcProcess := Process{
+	rpcProcess := pb.Process{
 		Name:           params.Name,
 		ExecutablePath: params.ExecutablePath,
-		Pid:            process.Pid,
+		Pid:            int32(process.Pid),
 		Args:           params.Args,
 		Cwd:            params.Cwd,
 		Scripts:        params.Scripts,
@@ -261,8 +255,8 @@ func SpawnNewProcess(params SpawnParams) *Process {
 	err = process.Release()
 	if err != nil {
 		params.Logger.Fatal().Msg(err.Error())
-		return nil
+		return nil, err
 	}
 
-	return &rpcProcess
+	return &rpcProcess, nil
 }

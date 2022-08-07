@@ -22,13 +22,13 @@ var startCmd = &cobra.Command{
 		logger := master.GetLogger()
 
 		if args[0] == "all" {
-			db := master.GetDB()
+			db := master.ListProcess()
 			if len(db) == 0 {
 				logger.Warn().Msg("No processes found")
 				return
 			}
 			for _, process := range db {
-				master.GetLogger().Info().Msgf("Applying action restartProcessId on app [%d](pid: [ %d ])", process.ID, process.Pid)
+				master.GetLogger().Info().Msgf("Applying action restartProcessId on app [%d](pid: [ %d ])", process.Id, process.Pid)
 				master.RestartProcess(process)
 			}
 			renderProcessList()
@@ -50,19 +50,22 @@ var startCmd = &cobra.Command{
 
 		// if you can find the app in the database, start it
 		process := master.FindProcess(args[0])
-		if process.Name != "" {
-			master.GetLogger().Info().Msgf("Applying action startProcessId on app [%d](pid: [ %d ])", process.ID, process.Pid)
+		if process != nil {
+			master.GetLogger().Info().Msgf("Applying action startProcessId on app [%d](pid: [ %d ])", process.Id, process.Pid)
 			master.RestartProcess(process)
 			renderProcessList()
 			return
 		}
 
 		// add process to the database
-		process = shared.SpawnNewProcess(shared.SpawnParams{
+		process, err := shared.SpawnNewProcess(shared.SpawnParams{
 			ExecutablePath: args[0],
 			Args:           args[1:],
 			Logger:         logger,
 		})
+		if err != nil {
+			master.GetLogger().Fatal().Msg(err.Error())
+		}
 		master.GetLogger().Info().Msgf("Applying action addProcessName on app [%s](pid: [ %d ])", process.Name, process.Pid)
 		master.AddProcess(process)
 

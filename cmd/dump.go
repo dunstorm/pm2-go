@@ -7,7 +7,7 @@ package cmd
 import (
 	"strings"
 
-	"github.com/dunstorm/pm2-go/shared"
+	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/spf13/cobra"
 )
@@ -31,9 +31,9 @@ var dumpCmd = &cobra.Command{
 		master.SpawnDaemon()
 		logger := master.GetLogger()
 		logger.Info().Msg("Saving current process list...")
-		allProcesses := []shared.Process{}
-		for _, process := range master.GetDB() {
-			allProcesses = append(allProcesses, *process)
+		allProcesses := []*pb.Process{}
+		for _, process := range master.ListProcess() {
+			allProcesses = append(allProcesses, process)
 		}
 		dumpFilePath := utils.GetDumpFilePath(dumpFileName)
 		err := utils.SaveObject(dumpFilePath, allProcesses)

@@ -41,8 +41,8 @@ var logsCmd = &cobra.Command{
 
 		// if you can find the app in the database
 		process := master.FindProcess(args[0])
-		if process.Name != "" {
-			logPrefix := strconv.Itoa(process.ID) + "|" + process.Name + "| "
+		if process != nil {
+			logPrefix := strconv.Itoa(int(process.Id)) + "|" + process.Name + "| "
 
 			green := color.New(color.FgGreen).SprintFunc()
 			red := color.New(color.FgRed).SprintFunc()

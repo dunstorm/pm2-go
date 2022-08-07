@@ -7,7 +7,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/dunstorm/pm2-go/rpc/server"
+	"github.com/dunstorm/pm2-go/grpc/server"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/rs/zerolog"
 )
@@ -83,12 +83,6 @@ func (app *App) SpawnDaemon() {
 
 		binPath, _ := exec.LookPath(os.Args[0])
 
-		// check if substring present in string
-		if utils.StringContains(binPath, "/var/folders") {
-			app.logger.Fatal().Msg("You're not allowed to run using go run")
-			os.Exit(0)
-		}
-
 		fullCommand := []string{binPath}
 		fullCommand = append(fullCommand, "-d")
 		process, err := os.StartProcess(binPath, fullCommand, &attr)
@@ -133,6 +127,6 @@ func (app *App) SpawnDaemon() {
 	}
 
 	if wasReborn() {
-		server.New()
+		server.New(9001)
 	}
 }

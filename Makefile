@@ -1,37 +1,41 @@
+protoc:
+	@echo "Generating Go files"
+	cd proto && protoc --go_out=. --go-grpc_out=. *.proto
+
 build:
-	go build -o bin/main main.go
+	go build -o bin/pm2-go main.go
 
 daemon:
-	go build -o bin/main main.go
-	./bin/main kill
-	./bin/main -d
+	go build -o bin/pm2-go main.go
+	./bin/pm2-go kill
+	./bin/pm2-go -d
 
 start:
-	./bin/main start examples/ecosystem.json
+	./bin/pm2-go start examples/ecosystem.json
 
 stop:
-	./bin/main stop examples/ecosystem.json
+	./bin/pm2-go stop examples/ecosystem.json
 
 delete:
-	./bin/main delete examples/ecosystem.json
+	./bin/pm2-go delete examples/ecosystem.json
 
 ls:
-	./bin/main ls
+	./bin/pm2-go ls
 
 kill:
-	./bin/main kill
+	./bin/pm2-go kill
 
 logs:
-	./bin/main logs python-test
+	./bin/pm2-go logs python-test
 
 test:
 	go test -v
 
 dump:
-	./bin/main dump
+	./bin/pm2-go dump
 
 restore:
-	./bin/main restore
+	./bin/pm2-go restore
 
 flush:
-	./bin/main flush
+	./bin/pm2-go flush

@@ -1,22 +1,27 @@
 package app
 
 import (
-	"net/rpc"
-	"os"
-
+	"github.com/dunstorm/pm2-go/grpc/client"
+	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/shared"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/rs/zerolog"
 )
 
 type App struct {
-	client *rpc.Client
+	client *client.Client
 	logger *zerolog.Logger
 }
 
 func New() *App {
+	logger := utils.NewLogger()
+	client, err := client.New(9001)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("Failed to create client")
+	}
 	return &App{
-		logger: utils.NewLogger(),
+		logger: logger,
+		client: client,
 	}
 }
 
@@ -24,74 +29,52 @@ func (app *App) GetLogger() *zerolog.Logger {
 	return app.logger
 }
 
-func (app *App) createClient() {
-	var err error
-	app.client, err = rpc.DialHTTP("tcp", "localhost:9001")
-	if err != nil {
-		app.logger.Fatal().Msgf("Connection error: %s", err.Error())
-		os.Exit(1)
-	}
+func (app *App) AddProcess(process *pb.Process) int32 {
+	return app.client.AddProcess(&pb.AddProcessRequest{
+		Name:           process.Name,
+		ExecutablePath: process.ExecutablePath,
+		Args:           process.Args,
+		Cwd:            process.Cwd,
+		Pid:            process.Pid,
+		AutoRestart:    process.AutoRestart,
+		Scripts:        process.Scripts,
+		PidFilePath:    process.PidFilePath,
+		LogFilePath:    process.LogFilePath,
+		ErrFilePath:    process.ErrFilePath,
+	})
 }
 
-func (app *App) GetDB() []*shared.Process {
-	var db []*shared.Process
-	app.createClient()
-	defer app.client.Close()
-	app.client.Call("API.GetDB", "", &db)
-	return db
+func (app *App) ListProcess() []*pb.Process {
+	return app.client.ListProcess()
 }
 
-func (app *App) AddProcess(process *shared.Process) shared.Process {
-	var reply shared.Process
-	app.createClient()
-	defer app.client.Close()
-	app.client.Call("API.AddProcess", process, &reply)
-	return reply
+func (app *App) FindProcess(name string) *pb.Process {
+	return app.client.FindProcess(name)
 }
 
-func (app *App) ListProcs() []shared.Process {
-	var db []shared.Process
-	app.createClient()
-	defer app.client.Close()
-	app.client.Call("API.GetDB", "", &db)
-	return db
+func (app *App) StopProcess(index int32) bool {
+	return app.client.StopProcess(index)
 }
 
-func (app *App) FindProcess(name string) *shared.Process {
-	var reply shared.Process
-	app.createClient()
-	defer app.client.Close()
-	app.client.Call("API.FindProcess", name, &reply)
-	return &reply
+func (app *App) StartProcess(newProcess *pb.Process) *pb.Process {
+	return app.client.StartProcess(&pb.StartProcessRequest{
+		Id:             newProcess.Id,
+		Name:           newProcess.Name,
+		Args:           newProcess.Args,
+		ExecutablePath: newProcess.ExecutablePath,
+		Cwd:            newProcess.Cwd,
+		AutoRestart:    newProcess.AutoRestart,
+		Scripts:        newProcess.Scripts,
+		Pid:            newProcess.Pid,
+		PidFilePath:    newProcess.PidFilePath,
+		LogFilePath:    newProcess.LogFilePath,
+		ErrFilePath:    newProcess.ErrFilePath,
+	})
 }
 
-func (app *App) StopProcessByIndex(index int) bool {
-	var reply bool
-	app.createClient()
-	defer app.client.Close()
-	app.client.Call("API.StopProcessByIndex", index, &reply)
-	return reply
-}
-
-func (app *App) StopProcess(process *shared.Process) bool {
-	var reply bool
-	app.createClient()
-	defer app.client.Close()
-	app.client.Call("API.StopProcess", process, &reply)
-	return reply
-}
-
-func (app *App) UpdateProcess(newProcess *shared.Process) *shared.Process {
-	var reply *shared.Process
-	app.createClient()
-	defer app.client.Close()
-	app.client.Call("API.UpdateProcess", newProcess, &reply)
-	return reply
-}
-
-func (app *App) RestartProcess(process *shared.Process) *shared.Process {
-	app.StopProcess(process)
-	newProcess := shared.SpawnNewProcess(shared.SpawnParams{
+func (app *App) RestartProcess(process *pb.Process) *pb.Process {
+	app.StopProcess(process.Id)
+	newProcess, err := shared.SpawnNewProcess(shared.SpawnParams{
 		Name:           process.Name,
 		Args:           process.Args,
 		ExecutablePath: process.ExecutablePath,
@@ -100,13 +83,14 @@ func (app *App) RestartProcess(process *shared.Process) *shared.Process {
 		Cwd:            process.Cwd,
 		Scripts:        process.Scripts,
 	})
-	newProcess.ID = process.ID
-	process = app.UpdateProcess(newProcess)
+	if err != nil {
+		app.logger.Fatal().Err(err).Msg("Failed to restart process")
+	}
+	newProcess.Id = process.Id
+	process = app.StartProcess(newProcess)
 	return process
 }
 
-func (app *App) DeleteProcess(process *shared.Process) {
-	app.createClient()
-	defer app.client.Close()
-	app.client.Call("API.DeleteProcess", process, nil)
+func (app *App) DeleteProcess(process *pb.Process) bool {
+	return app.client.DeleteProcess(process.Id)
 }

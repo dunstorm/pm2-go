@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/dunstorm/pm2-go/app"
+	"github.com/dunstorm/pm2-go/shared"
 	"github.com/dunstorm/pm2-go/utils"
 	"github.com/rs/zerolog"
 )
@@ -15,7 +16,7 @@ func isServerRunning() bool {
 
 func isProcessAdded(master *app.App, name string) bool {
 	process := master.FindProcess(name)
-	return process.ProcStatus != nil
+	return process != nil
 }
 
 func isProcessRunning(master *app.App, name string) bool {
@@ -23,9 +24,31 @@ func isProcessRunning(master *app.App, name string) bool {
 	return process.Pid != 0
 }
 
-func TestStartEcosystem(t *testing.T) {
+func TestSpawn(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.Disabled)
 
+	process, err := shared.SpawnNewProcess(shared.SpawnParams{
+		ExecutablePath: "python3",
+		Args:           []string{"examples/test.py"},
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if process == nil {
+		t.Error("process is nil")
+		return
+	}
+
+	processFound, running := utils.IsProcessRunning(process.Pid)
+	if !running {
+		t.Error("process is not running")
+	}
+	processFound.Kill()
+}
+
+func TestStartEcosystem(t *testing.T) {
 	master := app.New()
 	err := master.StartFile("examples/ecosystem.json")
 	if err != nil {
@@ -44,8 +67,6 @@ func TestStartEcosystem(t *testing.T) {
 }
 
 func TestStopEcosystem(t *testing.T) {
-	zerolog.SetGlobalLevel(zerolog.Disabled)
-
 	master := app.New()
 	err := master.StopFile("examples/ecosystem.json")
 	if err != nil {
@@ -64,8 +85,6 @@ func TestStopEcosystem(t *testing.T) {
 }
 
 func TestDeleteEcosystem(t *testing.T) {
-	zerolog.SetGlobalLevel(zerolog.Disabled)
-
 	master := app.New()
 	err := master.DeleteFile("examples/ecosystem.json")
 	if err != nil {

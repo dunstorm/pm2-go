@@ -24,13 +24,13 @@ var restartCmd = &cobra.Command{
 		logger := master.GetLogger()
 
 		if args[0] == "all" {
-			db := master.GetDB()
+			db := master.ListProcess()
 			if len(db) == 0 {
 				logger.Warn().Msg("No processes found")
 				return
 			}
 			for _, process := range db {
-				master.GetLogger().Info().Msgf("Applying action restartProcessId on app [%d](pid: [ %d ])", process.ID, process.Pid)
+				master.GetLogger().Info().Msgf("Applying action restartProcessId on app [%d](pid: [ %d ])", process.Id, process.Pid)
 				master.RestartProcess(process)
 			}
 			renderProcessList()
