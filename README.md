@@ -1,3 +1,4 @@
+[![PM2 Logo](https://i.imgur.com/wUgcD2t.png)](https://i.imgur.com/wUgcD2t.png)
 # PM2-GO
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/dunstorm/pm2-go)](https://goreportcard.com/report/github.com/dunstorm/pm2-go)
