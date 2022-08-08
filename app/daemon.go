@@ -108,10 +108,10 @@ func (app *App) SpawnDaemon() {
 			return
 		}
 
-		// wait for 9001 port to open with a timeout of 2s
+		// wait for 50051 port to open with a timeout of 2s
 		found := false
 		for i := 0; i < 200; i++ {
-			if utils.IsPortOpen(9001) {
+			if utils.IsPortOpen(50051) {
 				found = true
 				break
 			}
@@ -127,6 +127,6 @@ func (app *App) SpawnDaemon() {
 	}
 
 	if wasReborn() {
-		server.New(9001)
+		server.New(50051)
 	}
 }

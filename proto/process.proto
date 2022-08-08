@@ -39,7 +39,8 @@ message Process {
     string pid_file_path = 9;
     string log_file_path = 10;
     string err_file_path = 11;
-    string cron_expression = 12;
+    string cron_restart = 12;
+    google.protobuf.Timestamp next_start_at = 13;
     
     ProcStatus proc_status = 14;
     bool stop_next = 15;
@@ -56,7 +57,7 @@ message AddProcessRequest {
     string pid_file_path = 9;
     string log_file_path = 10;
     string err_file_path = 11;
-    string cron_expression = 12;
+    string cron_restart = 12;
 }
 
 message FindProcessRequest {
@@ -84,7 +85,7 @@ message StartProcessRequest {
     string pid_file_path = 9;
     string log_file_path = 10;
     string err_file_path = 11;
-    string cron_expression = 12;
+    string cron_restart = 12;
 }
 
 message ListProcessRequest {}
@@ -108,7 +109,7 @@ message SpawnProcessRequest {
     string executable_path = 4;
     bool auto_restart = 6;
     string cwd = 7;
-    string cron_expression = 11;
+    string cron_restart = 11;
 }
 
 message SpawnProcessResponse {

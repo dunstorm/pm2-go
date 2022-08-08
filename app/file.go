@@ -11,10 +11,11 @@ import (
 type Data struct {
 	Name           string   `json:"name"`
 	Args           []string `json:"args"`
-	ExecutablePath string   `json:"executablePath"`
+	ExecutablePath string   `json:"executable_path"`
 	AutoRestart    bool     `json:"autorestart"`
 	Cwd            string   `json:"cwd"`
 	Scripts        []string `json:"scripts"`
+	CronRestart    string   `json:"cron_restart"`
 }
 
 func readFileJson(filePath string) ([]Data, error) {
@@ -51,6 +52,7 @@ func (app *App) StartFile(filePath string) error {
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
 				Scripts:        p.Scripts,
+				CronRestart:    p.CronRestart,
 			})
 			if err != nil {
 				app.logger.Fatal().Msgf("Error while starting process [%s]", p.Name)
@@ -71,6 +73,7 @@ func (app *App) StartFile(filePath string) error {
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
 				Scripts:        p.Scripts,
+				CronRestart:    p.CronRestart,
 			})
 			if err != nil {
 				app.logger.Fatal().Msgf("Error while starting process [%s]", p.Name)
@@ -112,7 +115,7 @@ func (app *App) DeleteFile(filePath string) error {
 
 	for _, p := range payload {
 		var process *pb.Process = app.FindProcess(p.Name)
-		if process.ProcStatus == nil {
+		if process == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
 			if process.ProcStatus.Status == "online" {
@@ -147,8 +150,7 @@ func (app *App) FlushFile(filePath string, flushProcess func(process *pb.Process
 
 func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 	for _, p := range allProcesses {
-		var process *pb.Process
-		process = app.FindProcess(p.Name)
+		process := app.FindProcess(p.Name)
 		if process.ProcStatus == nil {
 			process, err := shared.SpawnNewProcess(shared.SpawnParams{
 				Name:           p.Name,
@@ -158,6 +160,7 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
 				Scripts:        p.Scripts,
+				CronRestart:    p.CronRestart,
 			})
 			if err != nil {
 				app.logger.Fatal().Msgf("Error while restoring process [%s]", p.Name)
@@ -178,6 +181,7 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
 				Scripts:        p.Scripts,
+				CronRestart:    p.CronRestart,
 			})
 			if err != nil {
 				app.logger.Fatal().Msgf("Error while restoring process [%s]", err.Error())

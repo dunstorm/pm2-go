@@ -5,14 +5,14 @@
         "autorestart": false,
         "cwd": "./examples",
         "scripts": ["logs_date"],
-        "executablePath": "python3"
+        "executable_path": "python3"
     },
     {
         "name": "celery-worker",
         "args": ["worker"],
-        "autorestart": false,
+        "autorestart": true,
         "cwd": "./examples",
         "scripts": ["logs_date"],
-        "executablePath": "celery"
+        "executable_path": "celery"
     }
 ]

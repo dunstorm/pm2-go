@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/aptible/supercronic/cronexpr"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/shared"
 	"github.com/dunstorm/pm2-go/utils"
@@ -27,6 +28,7 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 		Logger:         api.logger,
 		Cwd:            in.Cwd,
 		Scripts:        in.Scripts,
+		CronRestart:    in.CronRestart,
 	})
 
 	if err != nil {
@@ -47,12 +49,21 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 		ParentPid: int32(os.Getpid()),
 	}
 
+	if in.CronRestart != "" {
+		expr, err := cronexpr.Parse(in.CronRestart)
+		if err != nil {
+			return nil, status.Errorf(400, "Invalid cron expression: %v", err)
+		}
+		process.NextStartAt = timestamppb.New(expr.Next(time.Now()))
+	}
+
 	osProcess, running := utils.GetProcess(process.Pid)
 	if !running {
 		return nil, status.Error(400, "failed to spawn process")
 	}
 
 	api.databaseById[api.nextId] = process
+	api.databaseByName[process.Name] = process
 	api.processes[process.Id] = osProcess
 	api.nextId++
 

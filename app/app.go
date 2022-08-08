@@ -15,7 +15,7 @@ type App struct {
 
 func New() *App {
 	logger := utils.NewLogger()
-	client, err := client.New(9001)
+	client, err := client.New(50051)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("Failed to create client")
 	}
@@ -41,6 +41,7 @@ func (app *App) AddProcess(process *pb.Process) int32 {
 		PidFilePath:    process.PidFilePath,
 		LogFilePath:    process.LogFilePath,
 		ErrFilePath:    process.ErrFilePath,
+		CronRestart:    process.CronRestart,
 	})
 }
 
@@ -69,6 +70,7 @@ func (app *App) StartProcess(newProcess *pb.Process) *pb.Process {
 		PidFilePath:    newProcess.PidFilePath,
 		LogFilePath:    newProcess.LogFilePath,
 		ErrFilePath:    newProcess.ErrFilePath,
+		CronRestart:    newProcess.CronRestart,
 	})
 }
 
@@ -82,6 +84,7 @@ func (app *App) RestartProcess(process *pb.Process) *pb.Process {
 		Logger:         app.logger,
 		Cwd:            process.Cwd,
 		Scripts:        process.Scripts,
+		CronRestart:    process.CronRestart,
 	})
 	if err != nil {
 		app.logger.Fatal().Err(err).Msg("Failed to restart process")

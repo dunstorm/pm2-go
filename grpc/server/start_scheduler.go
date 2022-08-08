@@ -5,13 +5,52 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aptible/supercronic/cronexpr"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/shared"
 	"github.com/dunstorm/pm2-go/utils"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func updateProcessMap(handler *Handler, processId int32, p *os.Process) {
 	handler.processes[processId] = p
+}
+
+func restartProcess(handler *Handler, p *pb.Process) {
+	handler.logger.Info().Msgf("Restarting process %s", p.Name)
+	p.IncreaseRestarts()
+	newProcess, err := shared.SpawnNewProcess(shared.SpawnParams{
+		Name:           p.Name,
+		Args:           p.Args,
+		ExecutablePath: p.ExecutablePath,
+		AutoRestart:    p.AutoRestart,
+		Cwd:            p.Cwd,
+		Logger:         handler.logger,
+		Scripts:        p.Scripts,
+		CronRestart:    p.CronRestart,
+	})
+	if err != nil {
+		p.AutoRestart = false
+		p.SetToStop(true)
+		p.SetStatus("stopped")
+		p.Pid = 0
+		updateProcessMap(handler, p.Id, nil)
+
+		handler.logger.Error().Msgf("Error while restarting process %s: %s", p.Name, err)
+	}
+
+	p.Pid = newProcess.Pid
+	p.ProcStatus.ParentPid = int32(os.Getpid())
+	p.UpdateStatus("online")
+
+	// set new process
+	process, _ := utils.GetProcess(p.Pid)
+	updateProcessMap(handler, p.Id, process)
+
+	p.InitUptime()
+	p.InitStartedAt()
+
+	go process.Wait()
 }
 
 func startScheduler(handler *Handler) {
@@ -19,52 +58,31 @@ func startScheduler(handler *Handler) {
 
 	// sync process
 	syncProcess := func(p *pb.Process) {
-		if p.ProcStatus.Status == "online" || p.ProcStatus.Status == "stopping" {
+		if p.ProcStatus.Status == "online" {
 			if _, ok := utils.IsProcessRunning(p.Pid); !ok {
+				handler.mu.Lock()
+				defer handler.mu.Unlock()
+
 				p.UpdateUptime()
 				p.ResetPid()
 				p.UpdateStatus("stopped")
 				updateProcessMap(handler, p.Id, nil)
 
-				handler.mu.Lock()
-				defer handler.mu.Unlock()
-
 				if p.AutoRestart && !p.GetToStop() {
-					p.IncreaseRestarts()
-					newProcess, err := shared.SpawnNewProcess(shared.SpawnParams{
-						Name:           p.Name,
-						Args:           p.Args,
-						ExecutablePath: p.ExecutablePath,
-						AutoRestart:    p.AutoRestart,
-						Cwd:            p.Cwd,
-						Logger:         handler.logger,
-						Scripts:        p.Scripts,
-					})
-					if err != nil {
-						p.AutoRestart = false
-						p.SetToStop(true)
-						p.SetStatus("stopped")
-						p.Pid = 0
-						updateProcessMap(handler, p.Id, nil)
-
-						handler.logger.Error().Msgf("Error while restarting process %s: %s", p.Name, err)
-					}
-
-					p.Pid = newProcess.Pid
-					p.ProcStatus.ParentPid = int32(os.Getpid())
-					p.UpdateStatus("online")
-
-					// set new process
-					process, _ := utils.GetProcess(p.Pid)
-					updateProcessMap(handler, p.Id, process)
-
-					p.InitUptime()
-					p.InitStartedAt()
-
-					go process.Wait()
+					restartProcess(handler, p)
 				}
 			} else {
 				p.UpdateUptime()
+			}
+		} else if p.NextStartAt != nil && p.NextStartAt.AsTime().Before(time.Now()) {
+			handler.logger.Debug().Msgf("Process %s is scheduled to start at %s", p.Name, p.NextStartAt.AsTime())
+			restartProcess(handler, p)
+
+			if p.CronRestart != "" {
+				nextTime := cronexpr.MustParse(p.CronRestart).Next(time.Now())
+				p.NextStartAt = timestamppb.New(nextTime)
+			} else {
+				p.NextStartAt = nil
 			}
 		}
 		wg.Done()

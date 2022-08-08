@@ -21,6 +21,7 @@ type SpawnParams struct {
 	Cwd            string   `json:"cwd"`
 	AutoRestart    bool     `json:"autorestart"`
 	Scripts        []string `json:"scripts"`
+	CronRestart    string   `json:"cron_restart"`
 	Logger         *zerolog.Logger
 
 	PidPilePath string `json:"-"`
@@ -249,6 +250,7 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		ErrFilePath:    params.ErrFilePath,
 		PidFilePath:    params.PidPilePath,
 		AutoRestart:    params.AutoRestart,
+		CronRestart:    params.CronRestart,
 	}
 
 	// detaches the process

@@ -21,6 +21,7 @@ func renderProcessList() {
 		cyanBold("#"),
 		cyanBold("name"),
 		cyanBold("pid"),
+		cyanBold("ppid"),
 		cyanBold("status"),
 		cyanBold("uptime"),
 		cyanBold("↺"),
@@ -43,7 +44,7 @@ func renderProcessList() {
 			p.ProcStatus.Status = redBold(p.ProcStatus.Status)
 		}
 		t.AppendRow(table.Row{
-			p.Id, p.Name, p.Pid, p.ProcStatus.Status, p.ProcStatus.Uptime.AsDuration(), p.ProcStatus.Restarts, p.ProcStatus.Cpu, p.ProcStatus.Memory,
+			p.Id, p.Name, p.Pid, p.ProcStatus.ParentPid, p.ProcStatus.Status, p.ProcStatus.Uptime.AsDuration(), p.ProcStatus.Restarts, p.ProcStatus.Cpu, p.ProcStatus.Memory,
 		})
 	}
 

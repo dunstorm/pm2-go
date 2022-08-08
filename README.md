@@ -73,7 +73,8 @@ e.g.
         "autorestart": true,
         "cwd": "./examples",
         "scripts": ["logs_date"],
-        "executablePath": "python3"
+        "executable_path": "python3",
+        "cron_restart": "* * * * *"
     }
 ]
 ```
