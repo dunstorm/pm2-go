@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/aptible/supercronic/cronexpr"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/utils"
 	"google.golang.org/grpc/status"
@@ -36,14 +35,9 @@ func (api *Handler) AddProcess(ctx context.Context, in *pb.AddProcessRequest) (*
 			ParentPid: 1,
 		},
 	}
-
-	if in.CronRestart != "" {
-		expr, err := cronexpr.Parse(in.CronRestart)
-		if err != nil {
-			return nil, status.Errorf(400, "invalid cron expression: %v", err)
-		}
-		newProcess.CronRestart = in.CronRestart
-		newProcess.NextStartAt = timestamppb.New(expr.Next(time.Now()))
+	err := newProcess.UpdateNextStartAt()
+	if err != nil {
+		return nil, err
 	}
 
 	process, running := utils.GetProcess(newProcess.Pid)

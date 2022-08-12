@@ -26,6 +26,12 @@ func (api *Handler) StartProcess(ctx context.Context, in *pb.StartProcessRequest
 	process.AutoRestart = in.AutoRestart
 	process.Cwd = in.Cwd
 	process.Pid = in.Pid
+	process.CronRestart = in.CronRestart
+	process.ProcStatus.ParentPid = 1
+	err := process.UpdateNextStartAt()
+	if err != nil {
+		return nil, err
+	}
 
 	found, err := os.FindProcess(int(in.Pid))
 	if err != nil {

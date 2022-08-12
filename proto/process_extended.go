@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aptible/supercronic/cronexpr"
+	status "google.golang.org/grpc/status"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -29,6 +31,7 @@ func (p *Process) GetToStop() bool {
 
 func (p *Process) ResetPid() {
 	p.Pid = 0
+	p.ProcStatus.ParentPid = 0
 }
 
 func (p *Process) UpdateUptime() {
@@ -74,4 +77,16 @@ func (p *Process) UpdateCPUMemory() {
 	memory, _ := strconv.ParseFloat(outputSplit[1], 64)
 	memory = memory / 1024
 	p.ProcStatus.Memory = fmt.Sprintf("%.1fMB", memory)
+}
+
+func (p *Process) UpdateNextStartAt() error {
+	if p.CronRestart != "" {
+		expr, err := cronexpr.Parse(p.CronRestart)
+		if err != nil {
+			p.CronRestart = ""
+			return status.Errorf(400, "invalid cron expression: %v", err)
+		}
+		p.NextStartAt = timestamppb.New(expr.Next(time.Now()))
+	}
+	return nil
 }

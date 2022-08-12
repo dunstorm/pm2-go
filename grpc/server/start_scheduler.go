@@ -5,11 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aptible/supercronic/cronexpr"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/shared"
 	"github.com/dunstorm/pm2-go/utils"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func updateProcessMap(handler *Handler, processId int32, p *os.Process) {
@@ -33,7 +31,7 @@ func restartProcess(handler *Handler, p *pb.Process) {
 		p.AutoRestart = false
 		p.SetToStop(true)
 		p.SetStatus("stopped")
-		p.Pid = 0
+		p.ResetPid()
 		updateProcessMap(handler, p.Id, nil)
 
 		handler.logger.Error().Msgf("Error while restarting process %s: %s", p.Name, err)
@@ -66,6 +64,7 @@ func startScheduler(handler *Handler) {
 				p.UpdateUptime()
 				p.ResetPid()
 				p.UpdateStatus("stopped")
+				p.ResetCPUMemory()
 				updateProcessMap(handler, p.Id, nil)
 
 				if p.AutoRestart && !p.GetToStop() {
@@ -77,13 +76,7 @@ func startScheduler(handler *Handler) {
 		} else if p.NextStartAt != nil && p.NextStartAt.AsTime().Before(time.Now()) {
 			handler.logger.Debug().Msgf("Process %s is scheduled to start at %s", p.Name, p.NextStartAt.AsTime())
 			restartProcess(handler, p)
-
-			if p.CronRestart != "" {
-				nextTime := cronexpr.MustParse(p.CronRestart).Next(time.Now())
-				p.NextStartAt = timestamppb.New(nextTime)
-			} else {
-				p.NextStartAt = nil
-			}
+			p.UpdateNextStartAt()
 		}
 		wg.Done()
 	}

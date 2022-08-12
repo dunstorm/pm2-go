@@ -16,7 +16,7 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	found := api.processes[in.Id]
 
 	process.SetStatus("stopped")
-	process.Pid = 0
+	process.ResetCPUMemory()
 	process.StopNext = true
 
 	if found == nil {
@@ -39,11 +39,14 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 				Success: false,
 			}, nil
 		}
+		process.ResetPid()
 
 		return &pb.StopProcessResponse{
 			Success: true,
 		}, nil
 	}
+
+	process.ResetPid()
 
 	// for child process
 	found.Kill()
