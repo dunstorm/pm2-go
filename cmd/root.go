@@ -5,6 +5,7 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	app "github.com/dunstorm/pm2-go/app"
@@ -24,6 +25,10 @@ It allows you to keep applications alive forever, to reload them without downtim
 	Run: func(cmd *cobra.Command, args []string) {
 		if daemon, _ := cmd.PersistentFlags().GetBool("daemon"); daemon {
 			master.SpawnDaemon()
+			return
+		}
+		if version, _ := cmd.PersistentFlags().GetBool("version"); version {
+			fmt.Println("0.1.1")
 			return
 		}
 		cmd.Usage()
@@ -50,5 +55,6 @@ func init() {
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().BoolP("daemon", "d", false, "Run as daemon")
+	rootCmd.PersistentFlags().BoolP("version", "v", false, "Print pm2 version")
 	logsCmd.PersistentFlags().IntP("lines", "l", 15, "Number of lines to tail")
 }
