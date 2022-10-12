@@ -43,7 +43,8 @@ message Process {
     google.protobuf.Timestamp next_start_at = 13;
     
     ProcStatus proc_status = 14;
-    bool stop_next = 15;
+    bool stop_signal = 15;
+    int32 log_file_count = 16;
 }
 
 message AddProcessRequest {

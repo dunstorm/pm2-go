@@ -276,3 +276,16 @@ func GetProcess(pid int32) (*os.Process, bool) {
 func IsChildProcess(process *os.Process) bool {
 	return process.Pid == os.Getpid()
 }
+
+// rename a file
+func RenameFile(oldname string, newname string) error {
+	return os.Rename(oldname, newname)
+}
+
+func FileSize(filename string) int64 {
+	info, err := os.Stat(filename)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}

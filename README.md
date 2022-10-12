@@ -85,3 +85,18 @@ Example script: [logs_date.sh](https://github.com/dunstorm/pm2-go/blob/main/scri
 It adds corresponding date & time to each line from the process output
 
 ![](https://i.imgur.com/UFw9PpX.png)
+
+## Log Rotation
+
+Log rotation can be enabled by setting `logrotate` to `true` using
+
+```
+pm2-go config set logrotate true
+```
+
+Logs will be rotated every `x` size (default: 10MB) and `y` number of files (default: 10). It can be configured using
+
+```
+pm2-go config set logrotate_size 10M (e.g. 10M, 10K, 10G)
+pm2-go config set logrotate_max_files 10
+```

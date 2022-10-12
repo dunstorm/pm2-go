@@ -32,9 +32,7 @@ var dumpCmd = &cobra.Command{
 		logger := master.GetLogger()
 		logger.Info().Msg("Saving current process list...")
 		allProcesses := []*pb.Process{}
-		for _, process := range master.ListProcess() {
-			allProcesses = append(allProcesses, process)
-		}
+		allProcesses = append(allProcesses, master.ListProcess()...)
 		dumpFilePath := utils.GetDumpFilePath(dumpFileName)
 		err := utils.SaveObject(dumpFilePath, allProcesses)
 		if err != nil {

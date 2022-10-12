@@ -38,7 +38,7 @@ func (api *Handler) StartProcess(ctx context.Context, in *pb.StartProcessRequest
 		process.Pid = in.Pid
 	}
 
-	process.SetToStop(false)
+	process.SetStopSignal(false)
 	process.SetStatus("online")
 	updateProcessMap(api, in.Id, found)
 

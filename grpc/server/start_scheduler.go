@@ -2,6 +2,7 @@ package server
 
 import (
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -29,7 +30,7 @@ func restartProcess(handler *Handler, p *pb.Process) {
 	})
 	if err != nil {
 		p.AutoRestart = false
-		p.SetToStop(true)
+		p.SetStopSignal(true)
 		p.SetStatus("stopped")
 		p.ResetPid()
 		updateProcessMap(handler, p.Id, nil)
@@ -67,7 +68,8 @@ func startScheduler(handler *Handler) {
 				p.ResetCPUMemory()
 				updateProcessMap(handler, p.Id, nil)
 
-				if p.AutoRestart && !p.GetToStop() {
+				// restart process if auto restart is enabled and process is not stopped
+				if p.AutoRestart && !p.GetStopSignal() {
 					restartProcess(handler, p)
 				}
 			} else {
@@ -81,11 +83,65 @@ func startScheduler(handler *Handler) {
 		wg.Done()
 	}
 
+	// read config
+	config := utils.GetConfig()
+
+	// handle max log file, max log size
+	handleMaxLog := func(p *pb.Process) {
+		defer wg.Done()
+		// if LogFilePath exceeds LogRotateSize, rename file and add logfilecount
+		combinedLogFilePath := utils.FileSize(p.LogFilePath) + utils.FileSize(p.ErrFilePath)
+		if config.LogRotate && combinedLogFilePath > int64(config.LogRotateSize) {
+			err := utils.RenameFile(p.LogFilePath, p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
+			// if error rename file
+			if err != nil {
+				handler.logger.Error().Msgf("Error while renaming log file %s: %s", p.LogFilePath, err)
+			}
+			handler.logger.Info().Msgf("Renamed log file %s to %s", p.LogFilePath, p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
+
+			// do the same for error log file
+			err = utils.RenameFile(p.ErrFilePath, p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
+			// if error rename file
+			if err != nil {
+				handler.logger.Error().Msgf("Error while renaming log file %s: %s", p.ErrFilePath, err)
+			}
+			handler.logger.Info().Msgf("Renamed err file %s to %s", p.ErrFilePath, p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
+
+			// if no error, increase logfilecount
+			p.LogFileCount++
+
+			// if LogFileCount exceeds LogRotateCount, delete oldest log file
+			if p.LogFileCount >= int32(config.LogRotateMaxFiles) {
+				// delete oldest log & err file
+				err = os.Remove(p.LogFilePath + "." + strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
+				if err != nil {
+					handler.logger.Error().Msgf("Error while deleting log file %s: %s", p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))), err)
+				}
+				handler.logger.Info().Msgf("Deleted log file %s", p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
+
+				err = os.Remove(p.ErrFilePath + "." + strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
+				if err != nil {
+					handler.logger.Error().Msgf("Error while deleting log file %s: %s", p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))), err)
+				}
+				handler.logger.Info().Msgf("Deleted err file %s", p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
+
+				// decrease logfilecount
+				p.LogFileCount = int32(config.LogRotateMaxFiles)
+			}
+		}
+
+	}
+
 	go func() {
 		for {
 			for _, p := range handler.databaseById {
 				wg.Add(1)
 				go syncProcess(p)
+
+				if config.LogRotate {
+					wg.Add(1)
+					go handleMaxLog(p)
+				}
 			}
 			wg.Wait()
 			time.Sleep(500 * time.Millisecond)
