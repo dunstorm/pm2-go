@@ -5,6 +5,9 @@ protoc:
 build:
 	go build -o bin/pm2-go main.go
 
+install:
+	go install .
+
 daemon:
 	go build -o bin/pm2-go main.go
 	./bin/pm2-go kill

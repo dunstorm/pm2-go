@@ -21,12 +21,8 @@ func (p *Process) SetStatus(status string) {
 	p.ProcStatus.Status = status
 }
 
-func (p *Process) SetToStop(stopNext bool) {
-	p.StopNext = stopNext
-}
-
-func (p *Process) GetToStop() bool {
-	return p.StopNext
+func (p *Process) SetStopSignal(stopSignal bool) {
+	p.StopSignal = stopSignal
 }
 
 func (p *Process) ResetPid() {
