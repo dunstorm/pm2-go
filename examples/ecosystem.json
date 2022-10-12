@@ -11,7 +11,7 @@
     {
         "name": "celery-worker",
         "args": ["worker"],
-        "autorestart": true,
+        "autorestart": false,
         "cwd": "./examples",
         "scripts": ["logs_date"],
         "executable_path": "celery"
