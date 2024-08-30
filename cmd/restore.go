@@ -1,6 +1,5 @@
 /*
 Copyright © 2022 NAME HERE <EMAIL ADDRESS>
-
 */
 package cmd
 
@@ -18,6 +17,7 @@ var restoreCmd = &cobra.Command{
 	Short: "restore previously dumped processes",
 	Long:  `restore previously dumped processes`,
 	Run: func(cmd *cobra.Command, args []string) {
+		master.SpawnDaemon()
 		logger := master.GetLogger()
 
 		dumpFileName := "dump.json"
