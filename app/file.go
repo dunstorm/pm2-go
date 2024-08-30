@@ -2,7 +2,7 @@ package app
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
 
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/shared"
@@ -20,7 +20,7 @@ type Data struct {
 
 func readFileJson(filePath string) ([]Data, error) {
 	// read file
-	content, err := ioutil.ReadFile(filePath)
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}

@@ -73,7 +73,6 @@ func (params *SpawnParams) createFiles() error {
 }
 
 func (params *SpawnParams) checkScripts() {
-	// check if we have a script to run
 	for _, script := range params.Scripts {
 		scriptPath := path.Join(utils.GetMainDirectory(), "scripts", script+".sh")
 		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
@@ -82,11 +81,9 @@ func (params *SpawnParams) checkScripts() {
 	}
 }
 
-// pipe each script to the process
 func createPipedProcesses(params *SpawnParams, stdoutLogsRead *os.File, stderrLogsRead *os.File, stdoutLogsWrite *os.File, stderrLogsWrite *os.File) error {
 	var err error
-	var newStdoutLogsRead *os.File
-	var newErrorLogsRead *os.File
+	var newStdoutLogsRead, newErrorLogsRead *os.File
 	for index, script := range params.Scripts {
 		scriptPath := path.Join(utils.GetMainDirectory(), "scripts", script+".sh")
 		if index == len(params.Scripts)-1 {
@@ -104,39 +101,22 @@ func createPipedProcesses(params *SpawnParams, stdoutLogsRead *os.File, stderrLo
 				return err
 			}
 		}
-		// start stdout piped process
-		_, err := os.StartProcess("/bin/sh", []string{"/bin/sh", scriptPath}, &os.ProcAttr{
-			Dir: params.Cwd,
-			Env: os.Environ(),
-			Files: []*os.File{
-				stdoutLogsRead,
-				stdoutLogsWrite,
-				params.nullFile,
-			},
-			Sys: &syscall.SysProcAttr{
-				Foreground: false,
-			},
-		})
-		if err != nil {
-			params.Logger.Fatal().Msg(err.Error())
-			return err
-		}
-		// start stderr piped process
-		_, err = os.StartProcess("/bin/sh", []string{"/bin/sh", scriptPath}, &os.ProcAttr{
-			Dir: params.Cwd,
-			Env: os.Environ(),
-			Files: []*os.File{
-				stderrLogsRead,
-				stderrLogsWrite,
-				params.nullFile,
-			},
-			Sys: &syscall.SysProcAttr{
-				Foreground: false,
-			},
-		})
-		if err != nil {
-			params.Logger.Fatal().Msg(err.Error())
-			return err
+		for _, stream := range []struct {
+			read, write *os.File
+		}{
+			{stdoutLogsRead, stdoutLogsWrite},
+			{stderrLogsRead, stderrLogsWrite},
+		} {
+			cmd := exec.Command("/bin/sh", scriptPath)
+			cmd.Dir = params.Cwd
+			cmd.Env = os.Environ()
+			cmd.Stdin = stream.read
+			cmd.Stdout = stream.write
+			cmd.Stderr = params.nullFile
+			if err := cmd.Start(); err != nil {
+				params.Logger.Fatal().Msg(err.Error())
+				return err
+			}
 		}
 		if newStdoutLogsRead != nil {
 			stdoutLogsRead = newStdoutLogsRead
@@ -147,9 +127,7 @@ func createPipedProcesses(params *SpawnParams, stdoutLogsRead *os.File, stderrLo
 }
 
 func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
-	// validate params
-	err := params.fillDefaults()
-	if err != nil {
+	if err := params.fillDefaults(); err != nil {
 		return nil, err
 	}
 
@@ -158,91 +136,78 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		params.Logger.Warn().Msg("Add -u flag to prevent output buffering on python")
 	}
 
-	// create files
-	err = params.createFiles()
-	if err != nil {
+	if err := params.createFiles(); err != nil {
 		return nil, err
 	}
 
+	var err error
 	params.ExecutablePath, err = exec.LookPath(params.ExecutablePath)
 	if err != nil {
 		return nil, err
 	}
 
-	var stdoutLogsWrite *os.File
-	var stdoutLogsRead *os.File
-
-	var stderrLogsWrite *os.File
-	var stderrLogsRead *os.File
+	var stdoutLogsWrite, stdoutLogsRead, stderrLogsWrite, stderrLogsRead *os.File
 
 	if len(params.Scripts) == 0 {
 		stdoutLogsWrite = params.logFile
 		stderrLogsWrite = params.errFile
 	} else {
-		// create initial stdout pipe
 		stdoutLogsRead, stdoutLogsWrite, err = os.Pipe()
 		if err != nil {
 			return nil, err
 		}
-
-		// create initial err pipe
 		stderrLogsRead, stderrLogsWrite, err = os.Pipe()
 		if err != nil {
 			return nil, err
 		}
-
-		// check if scripts exist
 		params.checkScripts()
 	}
 
-	defer stdoutLogsRead.Close()
-	defer stdoutLogsWrite.Close()
+	defer func() {
+		if stdoutLogsRead != nil {
+			stdoutLogsRead.Close()
+		}
+		if stdoutLogsWrite != nil {
+			stdoutLogsWrite.Close()
+		}
+		params.nullFile.Close()
+		params.logFile.Close()
+		params.errFile.Close()
+	}()
 
-	// create process
-	var attr = os.ProcAttr{
-		Dir: params.Cwd,
-		Env: os.Environ(),
-		Files: []*os.File{
-			params.nullFile,
-			stdoutLogsWrite,
-			stderrLogsWrite,
-		},
-		Sys: &syscall.SysProcAttr{
-			Foreground: false,
-		},
+	cmd := exec.Command(params.ExecutablePath, params.Args...)
+	cmd.Dir = params.Cwd
+	cmd.Env = os.Environ()
+	cmd.Stdin = params.nullFile
+	cmd.Stdout = stdoutLogsWrite
+	cmd.Stderr = stderrLogsWrite
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
 	}
 
-	defer params.nullFile.Close()
-	defer params.logFile.Close()
-	defer params.errFile.Close()
-
-	fullCommand := []string{params.ExecutablePath}
-	fullCommand = append(fullCommand, params.Args...)
-
-	process, err := os.StartProcess(params.ExecutablePath, fullCommand, &attr)
-	if err != nil {
+	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 
-	err = createPipedProcesses(&params, stdoutLogsRead, stderrLogsRead, stdoutLogsWrite, stderrLogsWrite)
-	if err != nil {
-		return nil, err
+	if len(params.Scripts) > 0 {
+		err = createPipedProcesses(&params, stdoutLogsRead, stderrLogsRead, stdoutLogsWrite, stderrLogsWrite)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	params.Logger.Info().Msgf("[%s] ✓", params.Name)
 
-	// write pid to file
-	err = utils.WritePidToFile(params.PidPilePath, process.Pid)
-	if err != nil {
+	if err := utils.WritePidToFile(params.PidPilePath, cmd.Process.Pid); err != nil {
 		params.Logger.Fatal().Msg(err.Error())
-		process.Kill()
+		cmd.Process.Kill()
 		return nil, err
 	}
 
-	rpcProcess := pb.Process{
+	rpcProcess := &pb.Process{
 		Name:           params.Name,
 		ExecutablePath: params.ExecutablePath,
-		Pid:            int32(process.Pid),
+		Pid:            int32(cmd.Process.Pid),
 		Args:           params.Args,
 		Cwd:            params.Cwd,
 		Scripts:        params.Scripts,
@@ -253,12 +218,5 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		CronRestart:    params.CronRestart,
 	}
 
-	// detaches the process
-	err = process.Release()
-	if err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		return nil, err
-	}
-
-	return &rpcProcess, nil
+	return rpcProcess, nil
 }

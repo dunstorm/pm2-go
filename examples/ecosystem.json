@@ -7,13 +7,5 @@
         "scripts": ["logs_date"],
         "executable_path": "python3",
         "cron_restart": "* * * * *"
-    },
-    {
-        "name": "celery-worker",
-        "args": ["worker"],
-        "autorestart": false,
-        "cwd": "./examples",
-        "scripts": ["logs_date"],
-        "executable_path": "celery"
     }
 ]
