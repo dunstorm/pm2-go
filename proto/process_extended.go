@@ -65,7 +65,9 @@ func (p *Process) UpdateCPUMemory() {
 	if err != nil {
 		return
 	}
-	outputSplit := strings.Split(strings.TrimSpace(strings.Split(string(output), "\n")[1]), " ")
+	// output separator can be multiple whitespaces
+	// fix: error `parsing "": invalid syntax` in `strconv.ParseFloat`
+	outputSplit := strings.Fields(strings.TrimSpace(strings.Split(string(output), "\n")[1]))
 
 	p.ProcStatus.Cpu = fmt.Sprint(outputSplit[0], "%")
 
