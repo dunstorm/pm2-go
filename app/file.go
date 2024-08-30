@@ -26,7 +26,7 @@ func readFileJson(filePath string) ([]Data, error) {
 	}
 
 	var payload []Data
-	err = json.Unmarshal(content, &payload)
+	err = tryToParseApps(content, &payload)
 	if err != nil {
 		return nil, err
 	}
@@ -190,4 +190,18 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 			app.StartProcess(newProcess)
 		}
 	}
+}
+
+type WithAppsField struct {
+	Apps []Data `json:"apps"`
+}
+
+func tryToParseApps(content []byte, payload *[]Data) error {
+	var withAppsField WithAppsField
+	err := json.Unmarshal(content, &withAppsField)
+	if err != nil {
+		return json.Unmarshal(content, payload)
+	}
+	*payload = withAppsField.Apps
+	return nil
 }
