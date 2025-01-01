@@ -27,7 +27,7 @@ func (api *Handler) StartProcess(ctx context.Context, in *pb.StartProcessRequest
 	process.Cwd = in.Cwd
 	process.Pid = in.Pid
 	process.CronRestart = in.CronRestart
-	process.ProcStatus.ParentPid = 1
+	process.ProcStatus.ParentPid = int32(os.Getpid())
 	err := process.UpdateNextStartAt()
 	if err != nil {
 		return nil, err

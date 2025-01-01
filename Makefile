@@ -13,14 +13,14 @@ daemon:
 	./bin/pm2-go kill
 	./bin/pm2-go -d
 
-start:
+test/quick/start:
+	go build -o bin/pm2-go main.go
 	./bin/pm2-go start examples/ecosystem.json
 
-stop:
+test/quick/stop:
 	./bin/pm2-go stop examples/ecosystem.json
-
-delete:
 	./bin/pm2-go delete examples/ecosystem.json
+	./bin/pm2-go kill
 
 ls:
 	./bin/pm2-go ls

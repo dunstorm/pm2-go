@@ -40,46 +40,24 @@ func (app *App) StartFile(filePath string) error {
 	}
 
 	for _, p := range payload {
-		var process *pb.Process
-		var err error
-		process = app.FindProcess(p.Name)
+		process := app.FindProcess(p.Name)
 		if process == nil {
-			process, err = shared.SpawnNewProcess(shared.SpawnParams{
+			app.SpawnProcess(shared.SpawnParams{
 				Name:           p.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
 				AutoRestart:    p.AutoRestart,
-				Logger:         app.logger,
 				Cwd:            p.Cwd,
-				Scripts:        p.Scripts,
 				CronRestart:    p.CronRestart,
 			})
-			if err != nil {
-				app.logger.Fatal().Msgf("Error while starting process [%s]", p.Name)
-			}
-			app.AddProcess(process)
 		} else {
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.StopProcess(process.Id)
+				app.RestartProcess(process)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
+				app.StartProcess(process)
 			}
-			newProcess, err := shared.SpawnNewProcess(shared.SpawnParams{
-				Name:           process.Name,
-				Args:           p.Args,
-				ExecutablePath: p.ExecutablePath,
-				AutoRestart:    p.AutoRestart,
-				Logger:         app.logger,
-				Cwd:            p.Cwd,
-				Scripts:        p.Scripts,
-				CronRestart:    p.CronRestart,
-			})
-			if err != nil {
-				app.logger.Fatal().Msgf("Error while starting process [%s]", p.Name)
-			}
-			newProcess.Id = process.Id
-			app.StartProcess(newProcess)
 		}
 	}
 	return nil
@@ -159,7 +137,6 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				AutoRestart:    p.AutoRestart,
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
-				Scripts:        p.Scripts,
 				CronRestart:    p.CronRestart,
 			})
 			if err != nil {
@@ -180,7 +157,6 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				AutoRestart:    p.AutoRestart,
 				Logger:         app.logger,
 				Cwd:            p.Cwd,
-				Scripts:        p.Scripts,
 				CronRestart:    p.CronRestart,
 			})
 			if err != nil {

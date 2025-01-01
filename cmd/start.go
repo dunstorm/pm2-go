@@ -58,14 +58,11 @@ var startCmd = &cobra.Command{
 		}
 
 		// add process to the database
-		process, err := shared.SpawnNewProcess(shared.SpawnParams{
+		master.SpawnProcess(shared.SpawnParams{
 			ExecutablePath: args[0],
 			Args:           args[1:],
-			Logger:         logger,
 		})
-		if err != nil {
-			master.GetLogger().Fatal().Msg(err.Error())
-		}
+		process = master.FindProcess(args[0])
 		master.GetLogger().Info().Msgf("Applying action addProcessName on app [%s](pid: [ %d ])", process.Name, process.Pid)
 		master.AddProcess(process)
 

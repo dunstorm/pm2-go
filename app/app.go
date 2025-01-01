@@ -83,7 +83,6 @@ func (app *App) RestartProcess(process *pb.Process) *pb.Process {
 		AutoRestart:    process.AutoRestart,
 		Logger:         app.logger,
 		Cwd:            process.Cwd,
-		Scripts:        process.Scripts,
 		CronRestart:    process.CronRestart,
 	})
 	if err != nil {
@@ -96,4 +95,24 @@ func (app *App) RestartProcess(process *pb.Process) *pb.Process {
 
 func (app *App) DeleteProcess(process *pb.Process) bool {
 	return app.client.DeleteProcess(process.Id)
+}
+
+func (app *App) SpawnProcess(params shared.SpawnParams) bool {
+	resp := app.client.SpawnProcess(&pb.SpawnProcessRequest{
+		Name:           params.Name,
+		ExecutablePath: params.ExecutablePath,
+		Args:           params.Args,
+		Cwd:            params.Cwd,
+		AutoRestart:    params.AutoRestart,
+		CronRestart:    params.CronRestart,
+	})
+
+	if !resp.Success {
+		app.logger.Fatal().Msg("Server failed to register spawned process")
+		return false
+	}
+
+	app.logger.Info().Msgf("[%s] ✓", params.Name)
+
+	return resp.Success
 }

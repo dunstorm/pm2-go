@@ -20,7 +20,6 @@ type SpawnParams struct {
 	Args           []string `json:"args"`
 	Cwd            string   `json:"cwd"`
 	AutoRestart    bool     `json:"autorestart"`
-	Scripts        []string `json:"scripts"`
 	CronRestart    string   `json:"cron_restart"`
 	Logger         *zerolog.Logger
 
@@ -72,60 +71,6 @@ func (params *SpawnParams) createFiles() error {
 	return nil
 }
 
-func (params *SpawnParams) checkScripts() {
-	for _, script := range params.Scripts {
-		scriptPath := path.Join(utils.GetMainDirectory(), "scripts", script+".sh")
-		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-			params.Logger.Fatal().Msgf("Script %s not found in path %s", script, scriptPath)
-		}
-	}
-}
-
-func createPipedProcesses(params *SpawnParams, stdoutLogsRead *os.File, stderrLogsRead *os.File, stdoutLogsWrite *os.File, stderrLogsWrite *os.File) error {
-	var err error
-	var newStdoutLogsRead, newErrorLogsRead *os.File
-	for index, script := range params.Scripts {
-		scriptPath := path.Join(utils.GetMainDirectory(), "scripts", script+".sh")
-		if index == len(params.Scripts)-1 {
-			stdoutLogsWrite = params.logFile
-			stderrLogsWrite = params.errFile
-		} else {
-			newStdoutLogsRead, stdoutLogsWrite, err = os.Pipe()
-			if err != nil {
-				params.Logger.Fatal().Msg(err.Error())
-				return err
-			}
-			newErrorLogsRead, stderrLogsWrite, err = os.Pipe()
-			if err != nil {
-				params.Logger.Fatal().Msg(err.Error())
-				return err
-			}
-		}
-		for _, stream := range []struct {
-			read, write *os.File
-		}{
-			{stdoutLogsRead, stdoutLogsWrite},
-			{stderrLogsRead, stderrLogsWrite},
-		} {
-			cmd := exec.Command("/bin/sh", scriptPath)
-			cmd.Dir = params.Cwd
-			cmd.Env = os.Environ()
-			cmd.Stdin = stream.read
-			cmd.Stdout = stream.write
-			cmd.Stderr = params.nullFile
-			if err := cmd.Start(); err != nil {
-				params.Logger.Fatal().Msg(err.Error())
-				return err
-			}
-		}
-		if newStdoutLogsRead != nil {
-			stdoutLogsRead = newStdoutLogsRead
-			stderrLogsRead = newErrorLogsRead
-		}
-	}
-	return nil
-}
-
 func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	if err := params.fillDefaults(); err != nil {
 		return nil, err
@@ -146,55 +91,50 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		return nil, err
 	}
 
-	var stdoutLogsWrite, stdoutLogsRead, stderrLogsWrite, stderrLogsRead *os.File
-
-	if len(params.Scripts) == 0 {
-		stdoutLogsWrite = params.logFile
-		stderrLogsWrite = params.errFile
-	} else {
-		stdoutLogsRead, stdoutLogsWrite, err = os.Pipe()
-		if err != nil {
-			return nil, err
-		}
-		stderrLogsRead, stderrLogsWrite, err = os.Pipe()
-		if err != nil {
-			return nil, err
-		}
-		params.checkScripts()
+	stdoutReader, stdoutWriter, err := createPipe()
+	if err != nil {
+		return nil, err
+	}
+	stderrReader, stderrWriter, err := createPipe()
+	if err != nil {
+		return nil, err
 	}
 
-	defer func() {
-		if stdoutLogsRead != nil {
-			stdoutLogsRead.Close()
-		}
-		if stdoutLogsWrite != nil {
-			stdoutLogsWrite.Close()
-		}
-		params.nullFile.Close()
-		params.logFile.Close()
-		params.errFile.Close()
-	}()
+	stdoutTimestampWriter := newTimestampWriter(params.logFile, "")
+	stderrTimestampWriter := newTimestampWriter(params.errFile, "")
+
+	go stdoutTimestampWriter.processLogs(stdoutReader)
+	go stderrTimestampWriter.processLogs(stderrReader)
 
 	cmd := exec.Command(params.ExecutablePath, params.Args...)
 	cmd.Dir = params.Cwd
 	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, "PYTHONUNBUFFERED=1")
 	cmd.Stdin = params.nullFile
-	cmd.Stdout = stdoutLogsWrite
-	cmd.Stderr = stderrLogsWrite
+	cmd.Stdout = stdoutWriter
+	cmd.Stderr = stderrWriter
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
 
 	if err := cmd.Start(); err != nil {
+		stdoutWriter.Close()
+		stderrWriter.Close()
+		params.nullFile.Close()
+		params.logFile.Close()
+		params.errFile.Close()
 		return nil, err
 	}
 
-	if len(params.Scripts) > 0 {
-		err = createPipedProcesses(&params, stdoutLogsRead, stderrLogsRead, stdoutLogsWrite, stderrLogsWrite)
-		if err != nil {
-			return nil, err
-		}
-	}
+	go func() {
+		cmd.Wait()
+
+		stdoutWriter.Close()
+		stderrWriter.Close()
+		params.nullFile.Close()
+		params.logFile.Close()
+		params.errFile.Close()
+	}()
 
 	params.Logger.Info().Msgf("[%s] ✓", params.Name)
 
@@ -210,7 +150,6 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		Pid:            int32(cmd.Process.Pid),
 		Args:           params.Args,
 		Cwd:            params.Cwd,
-		Scripts:        params.Scripts,
 		LogFilePath:    params.LogFilePath,
 		ErrFilePath:    params.ErrFilePath,
 		PidFilePath:    params.PidPilePath,
