@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
 
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/dunstorm/pm2-go/utils"
@@ -48,7 +49,7 @@ var flushCmd = &cobra.Command{
 		// check if args[0] is a file
 		// get file extension
 		// if it's a json file, parse it and start the app
-		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
+		if fi, err := os.Stat(args[0]); err == nil && !fi.IsDir() && filepath.Ext(args[0]) == ".json" {
 			logger.Info().Msg("Flushing:")
 			err = master.FlushFile(args[0], flushProcess)
 			if err != nil {

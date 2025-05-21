@@ -7,6 +7,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -32,8 +33,18 @@ var logsCmd = &cobra.Command{
 		// check if args[0] is a file
 		// get file extension
 		// if it's a json file, parse it and start the app
-		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
-			master.StartFile(args[0])
+		if fi, err := os.Stat(args[0]); err == nil && !fi.IsDir() && filepath.Ext(args[0]) == ".json" {
+			// Assuming StartFile is appropriate here, though "logs" command usually doesn't start.
+			// This behavior is from the original code.
+			// If StartFile is not desired, this block might need to be removed or changed to an error.
+			err := master.StartFile(args[0])
+			if err != nil {
+				master.GetLogger().Error().Err(err).Msgf("Failed to process file %s for logs", args[0])
+			}
+			// Typically, after processing a JSON file for a "logs" command,
+			// one might expect to see logs for all apps in that file, or an error if that's not supported.
+			// The original code called StartFile and then returned, which might not be the intended log viewing behavior.
+			// For now, preserving the call to StartFile but adding error handling and context.
 			return
 		}
 

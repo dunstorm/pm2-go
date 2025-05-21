@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -50,19 +51,19 @@ func (params *SpawnParams) fillDefaults() error {
 	}
 
 	nameLower := strings.ToLower(params.Name)
-	params.PidPilePath = path.Join(utils.GetMainDirectory(), "pids", fmt.Sprintf("%s.pid", nameLower))
-	params.LogFilePath = path.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-out.log", nameLower))
-	params.ErrFilePath = path.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-err.log", nameLower))
+	params.PidPilePath = filepath.Join(utils.GetMainDirectory(), "pids", fmt.Sprintf("%s.pid", nameLower))
+	params.LogFilePath = filepath.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-out.log", nameLower))
+	params.ErrFilePath = filepath.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-err.log", nameLower))
 
 	return nil
 }
 
 func (params *SpawnParams) createFiles() error {
 	var err error
-	if params.logFile, err = os.OpenFile(params.LogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+	if params.logFile, err = os.OpenFile(params.LogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644); err != nil {
 		return err
 	}
-	if params.errFile, err = os.OpenFile(params.ErrFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+	if params.errFile, err = os.OpenFile(params.ErrFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644); err != nil {
 		return err
 	}
 	if params.nullFile, err = os.Open(os.DevNull); err != nil {
@@ -76,9 +77,19 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		return nil, err
 	}
 
-	splitExecutablePath := strings.Split(params.ExecutablePath, "/")
-	if splitExecutablePath[len(splitExecutablePath)-1] == "python" && len(params.Args) > 0 && params.Args[0] != "-u" {
-		params.Logger.Warn().Msg("Add -u flag to prevent output buffering on python")
+	baseExecutable := filepath.Base(params.ExecutablePath)
+	if (baseExecutable == "python" || baseExecutable == "python.exe" || baseExecutable == "python3" || baseExecutable == "python3.exe") && len(params.Args) > 0 && params.Args[0] != "-u" {
+		// Check if '-u' is anywhere in args
+		hasUFlag := false
+		for _, arg := range params.Args {
+			if arg == "-u" {
+				hasUFlag = true
+				break
+			}
+		}
+		if !hasUFlag {
+			params.Logger.Warn().Msg("Consider adding the '-u' flag to your python script arguments to prevent output buffering.")
+		}
 	}
 
 	if err := params.createFiles(); err != nil {
@@ -113,8 +124,11 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	cmd.Stdin = params.nullFile
 	cmd.Stdout = stdoutWriter
 	cmd.Stderr = stderrWriter
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
+	// SysProcAttr is OS-specific. Setpgid is for Unix-like systems.
+	if runtime.GOOS != "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setpgid: true,
+		}
 	}
 
 	if err := cmd.Start(); err != nil {

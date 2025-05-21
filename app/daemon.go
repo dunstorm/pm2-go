@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/dunstorm/pm2-go/grpc/server"
@@ -15,7 +15,7 @@ import (
 func isDaemonRunning() bool {
 	directory := utils.GetMainDirectory()
 	// check if daemon.pid exists
-	if _, err := os.Stat(path.Join(directory, "daemon.pid")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(directory, "daemon.pid")); os.IsNotExist(err) {
 		return false
 	}
 	// read daemon.pid and check if process is running
@@ -51,10 +51,10 @@ func (app *App) SpawnDaemon() {
 
 	app.logger.Info().Msgf("Spawning PM2 daemon with pm2_home=%s", utils.GetMainDirectory())
 
-	daemonPidFile := path.Join(utils.GetMainDirectory(), "daemon.pid")
-	daemonLogFile := path.Join(utils.GetMainDirectory(), "daemon.log")
+	daemonPidFile := filepath.Join(utils.GetMainDirectory(), "daemon.pid")
+	daemonLogFile := filepath.Join(utils.GetMainDirectory(), "daemon.log")
 
-	logFile, err := os.OpenFile(daemonLogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	logFile, err := os.OpenFile(daemonLogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		app.logger.Fatal().Msg(err.Error())
 		return

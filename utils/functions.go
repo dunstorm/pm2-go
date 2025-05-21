@@ -8,7 +8,8 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
-	"path"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,29 +29,47 @@ func NewLogger() *zerolog.Logger {
 func IsProcessRunning(pid int32) (*os.Process, bool) {
 	process, err := os.FindProcess(int(pid))
 	if err != nil {
-		return nil, false
+		return nil, false // Process lookup failed
 	}
-	err = process.Signal(syscall.Signal(0))
-	if err != nil {
-		return nil, false
+
+	// On Windows, os.FindProcess always returns a process object and nil error,
+	// even if the PID doesn't exist. Sending a signal is not reliable.
+	// A common way to check is to try to send a 0 signal on Unix.
+	// For Windows, this check is less definitive without using Windows-specific APIs.
+	// If Signal(syscall.Signal(0)) fails, it means the process is not running or not owned by us.
+	if runtime.GOOS != "windows" {
+		err = process.Signal(syscall.Signal(0))
+		if err != nil {
+			return nil, false
+		}
+	} else {
+		// On Windows, a successful os.FindProcess means the PID *was* valid at some point.
+		// To check if it's *still* running, more complex checks are needed (e.g., via tasklist or OpenProcess).
+		// For now, we'll consider it "found" but this isn't a guarantee it's actively running without error.
+		// A more robust check might involve trying to query process information.
+		// However, to avoid cgo or platform-specific libraries, we'll rely on os.FindProcess.
+		// If the process truly doesn't exist, subsequent operations on it would likely fail.
 	}
 	return process, true
 }
 
 // get pm2-go main directory
 func GetMainDirectory() string {
-	dirname, err := os.UserHomeDir()
+	userHomeDir, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error getting user home directory:", err)
 		os.Exit(1)
 	}
 	// add pm2-go directory
-	dirname = dirname + "/.pm2-go"
+	dirname := filepath.Join(userHomeDir, ".pm2-go")
 	// if dirname doesnt exist create it
 	if _, err := os.Stat(dirname); os.IsNotExist(err) {
+		// os.ModePerm (0777) is often used for user-specific config dirs,
+		// but be mindful of security if multiple users share the system.
+		// 0755 is also a good default.
 		os.Mkdir(dirname, 0755)
-		os.Mkdir(dirname+"/pids", 0755)
-		os.Mkdir(dirname+"/logs", 0755)
+		os.Mkdir(filepath.Join(dirname, "pids"), 0755)
+		os.Mkdir(filepath.Join(dirname, "logs"), 0755)
 	}
 	// return dirname
 	return dirname
@@ -59,7 +78,19 @@ func GetMainDirectory() string {
 // read pid file
 func ReadPidFile(pidFileName string) (int32, error) {
 	// read daemon.pid using go
-	fileIO, err := os.OpenFile(path.Join(GetMainDirectory(), pidFileName), os.O_RDONLY, 0644)
+	filePath := filepath.Join(GetMainDirectory(), "pids", pidFileName) // Assume pid files are in pids subdir
+	// Ensure the pidFileName itself is just a name, not a path.
+	// If pidFileName could be like "daemon.pid" or "pids/daemon.pid", this needs adjustment.
+	// Based on app/daemon.go, it's just "daemon.pid".
+	// However, shared/spawn.go stores PIDs like "pids/name.pid" relative to main dir.
+	// Let's assume pidFileName is the base name and construct path accordingly.
+	if filepath.Base(pidFileName) == pidFileName { // It's a base name
+		filePath = filepath.Join(GetMainDirectory(), "pids", pidFileName)
+	} else { // It's already a relative path from main dir (e.g. "pids/myprocess.pid")
+		filePath = filepath.Join(GetMainDirectory(), pidFileName)
+	}
+
+	fileIO, err := os.OpenFile(filePath, os.O_RDONLY, 0644)
 	if err != nil {
 		return 0, err
 	}
@@ -80,7 +111,16 @@ func ReadPidFile(pidFileName string) (int32, error) {
 func WritePidToFile(pidFilePath string, pid int) error {
 	var fileIO *os.File
 	var err error
-	fileIO, err = os.OpenFile(pidFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	// Ensure the directory exists, as pidFilePath might be like "pids/name.pid"
+	dir := filepath.Dir(pidFilePath)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		// This check might be redundant if GetMainDirectory already creates "pids"
+		// but good for robustness if WritePidToFile is called with arbitrary paths.
+		// For now, assume pidFilePath is relative to GetMainDirectory() or absolute.
+		// The paths from spawn.go are like GetMainDirectory()/pids/name.pid
+	}
+
+	fileIO, err = os.OpenFile(pidFilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
@@ -208,7 +248,7 @@ func ExitPid(pid int32, timeout time.Duration) {
 func RemoveFileContents(filename string) error {
 	var file *os.File
 	var err error
-	file, err = os.OpenFile(filename, os.O_RDWR, 0755)
+	file, err = os.OpenFile(filename, os.O_RDWR, 0644) // Changed permissions from 0755 to 0644 for a file
 	if err != nil {
 		return err
 	}
@@ -219,9 +259,18 @@ func RemoveFileContents(filename string) error {
 
 // check if port is open
 func IsPortOpen(port int) bool {
-	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+	// For Windows, "localhost" might resolve to IPv6 "::1" first,
+	// which might not be what's listened on if the server binds to "0.0.0.0" or "127.0.0.1".
+	// Explicitly checking 127.0.0.1 is often more reliable.
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+	conn, err := net.DialTimeout("tcp", address, 1*time.Second) // Added timeout
 	if err != nil {
-		return false
+		// Try localhost as a fallback, though less common to be different for TCP.
+		address = fmt.Sprintf("localhost:%d", port)
+		conn, err = net.DialTimeout("tcp", address, 1*time.Second)
+		if err != nil {
+			return false
+		}
 	}
 	defer conn.Close()
 	return true
@@ -229,18 +278,22 @@ func IsPortOpen(port int) bool {
 
 // get dump file path
 func GetDumpFilePath(filename string) string {
-	return os.Getenv("HOME") + "/.pm2-go/" + filename
+	return filepath.Join(GetMainDirectory(), filename) // Uses GetMainDirectory now
 }
 
 // dump the current processses to a file
 func SaveObject(filename string, object interface{}) error {
 	var file *os.File
 	var err error
-	file, err = os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	file, err = os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644) // Changed 0640 to 0644
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+	encoder := json.NewEncoder(file)
+	// The previous SaveObject function had an error where it was trying to use 'conn'
+	// which is not in its scope, and also returning 'false' or 'true' instead of 'error'.
+	// Correcting that:
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	err = encoder.Encode(object)

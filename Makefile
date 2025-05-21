@@ -2,8 +2,11 @@ protoc:
 	@echo "Generating Go files"
 	cd proto && protoc --go_out=. --go-grpc_out=. *.proto
 
-build:
+build: # Builds for the current OS by default, or for Linux if GOOS is not set
 	go build -o bin/pm2-go main.go
+
+build-windows:
+	GOOS=windows GOARCH=amd64 go build -o bin/pm2-go.exe main.go
 
 install:
 	go install .
@@ -42,3 +45,8 @@ restore:
 
 flush:
 	./bin/pm2-go flush
+
+release:
+	goreleaser release --snapshot --clean
+
+.PHONY: protoc test ls kill dump restore flush build-windows release
