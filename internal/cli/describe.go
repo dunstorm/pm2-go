@@ -19,7 +19,7 @@ var describeCmd = &cobra.Command{
 	Short: "describe all parameters of a process",
 	Long:  `describe all parameters of a process`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(os.Args) < 1 {
+		if len(args) < 1 {
 			cmd.Usage()
 			return
 		}

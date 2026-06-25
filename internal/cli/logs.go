@@ -21,7 +21,7 @@ var logsCmd = &cobra.Command{
 	Short: "Stream logs file",
 	Long:  `Stream logs file`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(os.Args) < 1 {
+		if len(args) < 1 {
 			cmd.Usage()
 			return
 		}

@@ -100,3 +100,30 @@ Logs will be rotated every `x` size (default: 10MB) and `y` number of files (def
 pm2-go config set logrotate_size 10M (e.g. 10M, 10K, 10G)
 pm2-go config set logrotate_max_files 10
 ```
+
+## Development
+
+Run unit tests:
+
+```
+make test
+```
+
+Run end-to-end CLI checks locally:
+
+```
+make test/e2e
+```
+
+Run the same end-to-end checks inside a lightweight Docker image:
+
+```
+make test/e2e/docker
+```
+
+Run the slower cron-firing e2e scenario:
+
+```
+make test/e2e/slow
+make test/e2e/docker/slow
+```

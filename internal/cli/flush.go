@@ -58,7 +58,7 @@ var flushCmd = &cobra.Command{
 
 		// if you can find the app in the database, start it
 		process := master.FindProcess(args[0])
-		if process.Name == "" {
+		if process == nil || process.Name == "" {
 			logger.Error().Msgf("Process or namespace %s not found", args[0])
 			return
 		}

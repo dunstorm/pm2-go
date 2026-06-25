@@ -55,7 +55,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		process := master.FindProcess(args[0])
-		if process.ProcStatus == nil {
+		if process == nil || process.ProcStatus == nil {
 			logger.Error().Msgf("Process or Namespace %s not found", args[0])
 			return
 		}

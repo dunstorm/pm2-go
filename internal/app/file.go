@@ -117,7 +117,7 @@ func (app *App) FlushFile(filePath string, flushProcess func(process *pb.Process
 
 	for _, p := range payload {
 		var process *pb.Process = app.FindProcess(p.Name)
-		if process.ProcStatus == nil {
+		if process == nil || process.ProcStatus == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
 			flushProcess(process)
@@ -129,7 +129,7 @@ func (app *App) FlushFile(filePath string, flushProcess func(process *pb.Process
 func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 	for _, p := range allProcesses {
 		process := app.FindProcess(p.Name)
-		if process.ProcStatus == nil {
+		if process == nil || process.ProcStatus == nil {
 			process, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
 				Name:           p.Name,
 				Args:           p.Args,
