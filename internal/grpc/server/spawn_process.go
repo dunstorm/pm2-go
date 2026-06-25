@@ -75,6 +75,7 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 	api.databaseByName[process.Name] = process
 	api.processes[process.Id] = osProcess
 	api.nextId++
+	api.persistStateLocked()
 
 	go osProcess.Wait()
 

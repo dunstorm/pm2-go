@@ -171,6 +171,20 @@ wait_for_daemon_log() {
 	fail "timed out waiting for daemon log to contain '$needle'"
 }
 
+wait_for_pid_exit() {
+	local pid="$1"
+	local timeout="${2:-20}"
+
+	for _ in $(seq 1 "$timeout"); do
+		if ! kill -0 "$pid" >/dev/null 2>&1; then
+			return
+		fi
+		sleep 0.1
+	done
+
+	fail "timed out waiting for pid $pid to exit"
+}
+
 capture_logs_for() {
 	local name="$1"
 	local output_file="$TMP_HOME/logs-$name.out"
@@ -208,6 +222,20 @@ write_cron_ecosystem() {
     "cwd": ".",
     "executable_path": "python3",
     "cron_restart": "* * * * *"
+  }
+]
+JSON
+}
+
+write_state_restore_ecosystem() {
+	cat >"$TMP_HOME/state-restore.json" <<'JSON'
+[
+  {
+    "name": "state-restore",
+    "args": ["-c", "import time; time.sleep(30)"],
+    "autorestart": false,
+    "cwd": ".",
+    "executable_path": "python3"
   }
 ]
 JSON
@@ -332,6 +360,25 @@ delete_all_output="$(capture_pm2 delete all)"
 assert_contains "$delete_all_output" "python-test"
 empty_ls="$(run_pm2 ls)"
 assert_not_contains "$empty_ls" "python-test"
+
+log "automatic state restore after daemon crash"
+write_state_restore_ecosystem
+run_pm2 start "$TMP_HOME/state-restore.json" >/dev/null
+state_restore_ls="$(wait_for_ls_contains "state-restore" "online")"
+assert_parent_is_daemon "$state_restore_ls" "state-restore"
+[[ -s "$TMP_HOME/.pm2-go/state.json" ]] || fail "expected state file to exist"
+
+daemon_pid="$(cat "$TMP_HOME/.pm2-go/daemon.pid")"
+state_restore_pid="$(cat "$TMP_HOME/.pm2-go/pids/state-restore.pid")"
+kill -9 "$daemon_pid"
+wait_for_pid_exit "$daemon_pid"
+kill "$state_restore_pid" >/dev/null 2>&1 || true
+wait_for_pid_exit "$state_restore_pid"
+
+state_restored_ls="$(wait_for_ls_contains "state-restore" "online")"
+assert_line_count "$state_restored_ls" "state-restore" 1
+assert_parent_is_daemon "$state_restored_ls" "state-restore"
+run_pm2 delete state-restore >/dev/null
 
 log "missing process errors"
 assert_contains "$(capture_pm2 stop missing-process)" "not found"

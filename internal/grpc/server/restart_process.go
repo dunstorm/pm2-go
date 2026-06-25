@@ -86,6 +86,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	api.databaseById[newProcess.Id] = newProcess
 	api.databaseByName[newProcess.Name] = newProcess
 	api.processes[newProcess.Id] = osProcess
+	api.persistStateLocked()
 
 	go osProcess.Wait()
 

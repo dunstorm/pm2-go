@@ -231,7 +231,11 @@ func IsPortOpen(port int) bool {
 
 // get dump file path
 func GetDumpFilePath(filename string) string {
-	return os.Getenv("HOME") + "/.pm2-go/" + filename
+	return path.Join(GetMainDirectory(), filename)
+}
+
+func GetStateFilePath() string {
+	return path.Join(GetMainDirectory(), "state.json")
 }
 
 // dump the current processses to a file

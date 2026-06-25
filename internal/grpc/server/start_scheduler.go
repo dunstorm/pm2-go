@@ -35,6 +35,7 @@ func restartProcess(handler *Handler, p *pb.Process) {
 		updateProcessMap(handler, p.Id, nil)
 
 		handler.logger.Error().Msgf("Error while restarting process %s: %s", p.Name, err)
+		return
 	}
 
 	p.Pid = newProcess.Pid
@@ -71,13 +72,18 @@ func startScheduler(handler *Handler) {
 				if p.AutoRestart && !p.GetStopSignal() {
 					restartProcess(handler, p)
 				}
+				handler.persistStateLocked()
 			} else {
 				p.UpdateUptime()
 			}
 		} else if p.NextStartAt != nil && p.NextStartAt.AsTime().Before(time.Now()) {
+			handler.mu.Lock()
+			defer handler.mu.Unlock()
+
 			handler.logger.Debug().Msgf("Process %s is scheduled to start at %s", p.Name, p.NextStartAt.AsTime())
 			restartProcess(handler, p)
 			p.UpdateNextStartAt()
+			handler.persistStateLocked()
 		}
 		wg.Done()
 	}

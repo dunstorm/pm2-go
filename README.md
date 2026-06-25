@@ -20,6 +20,7 @@ PM2. Linux and macOS are supported; Windows is not currently supported.
 - Tail stdout and stderr logs
 - Auto-restart crashed processes
 - Restart processes on cron schedules
+- Restore online processes automatically when the daemon starts
 - Dump and restore process lists
 - Rotate logs by size and file count
 
@@ -139,6 +140,7 @@ PM2-GO stores runtime data under `$HOME/.pm2-go`:
 | `pids/` | Managed process PID files. |
 | `logs/` | Process stdout and stderr logs. |
 | `config.json` | Local PM2-GO configuration. |
+| `state.json` | Automatically persisted online processes restored on daemon start. |
 | `*.json` | Dump files created by `pm2-go dump`. |
 
 You can start the daemon explicitly with:

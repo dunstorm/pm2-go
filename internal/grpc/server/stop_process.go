@@ -27,6 +27,7 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 
 	if found == nil {
 		api.logger.Info().Msgf("process not found: %d", in.Id)
+		api.persistStateLocked()
 		return &pb.StopProcessResponse{
 			Success: false,
 		}, nil
@@ -37,6 +38,7 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	// for child process
 	found.Kill()
 	updateProcessMap(api, in.Id, nil)
+	api.persistStateLocked()
 
 	return &pb.StopProcessResponse{
 		Success: true,

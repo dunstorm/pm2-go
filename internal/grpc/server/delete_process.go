@@ -26,6 +26,7 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 	delete(api.databaseById, process.Id)
 	delete(api.databaseByName, process.Name)
 	delete(api.processes, in.Id)
+	api.persistStateLocked()
 
 	return &pb.DeleteProcessResponse{
 		Success: true,
