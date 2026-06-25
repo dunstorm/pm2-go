@@ -42,6 +42,7 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 		Logger:         api.logger,
 		Cwd:            in.Cwd,
 		CronRestart:    in.CronRestart,
+		Env:            in.Env,
 	})
 
 	if err != nil {

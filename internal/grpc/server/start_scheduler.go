@@ -26,6 +26,7 @@ func restartProcess(handler *Handler, p *pb.Process) {
 		Cwd:            p.Cwd,
 		Logger:         handler.logger,
 		CronRestart:    p.CronRestart,
+		Env:            p.Env,
 	})
 	if err != nil {
 		p.AutoRestart = false

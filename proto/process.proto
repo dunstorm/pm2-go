@@ -44,6 +44,7 @@ message Process {
     ProcStatus proc_status = 14;
     bool stop_signal = 15;
     int32 log_file_count = 16;
+    map<string, string> env = 17;
 }
 
 message FindProcessRequest {
@@ -81,6 +82,7 @@ message SpawnProcessRequest {
     bool auto_restart = 6;
     string cwd = 7;
     string cron_restart = 11;
+    map<string, string> env = 12;
 }
 
 message SpawnProcessResponse {
@@ -96,4 +98,5 @@ message RestartProcessRequest {
     bool auto_restart = 7;
     string cwd = 8;
     string cron_restart = 12;
+    map<string, string> env = 13;
 }

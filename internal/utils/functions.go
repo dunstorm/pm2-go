@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -294,4 +295,45 @@ func FileSize(filename string) int64 {
 		return 0
 	}
 	return info.Size()
+}
+
+func EnvironmentMap(environ []string) map[string]string {
+	environment := make(map[string]string, len(environ))
+	for _, item := range environ {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok || key == "" {
+			continue
+		}
+		environment[key] = value
+	}
+	return environment
+}
+
+func EnvironmentSlice(environment map[string]string) []string {
+	keys := make([]string, 0, len(environment))
+	for key := range environment {
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	environ := make([]string, 0, len(keys))
+	for _, key := range keys {
+		environ = append(environ, key+"="+environment[key])
+	}
+	return environ
+}
+
+func CloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }

@@ -101,3 +101,31 @@ func TestIsPythonExecutable(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandEnvironmentAddsPythonUnbufferedDefault(t *testing.T) {
+	environ := commandEnvironment([]string{"PATH=/bin"}, nil, true)
+	env := utils.EnvironmentMap(environ)
+
+	if env["PYTHONUNBUFFERED"] != "1" {
+		t.Fatalf("expected PYTHONUNBUFFERED=1, got %q", env["PYTHONUNBUFFERED"])
+	}
+}
+
+func TestCommandEnvironmentAppliesOverrides(t *testing.T) {
+	environ := commandEnvironment(
+		[]string{"PATH=/bin", "APP_ENV=base", "PYTHONUNBUFFERED=1"},
+		map[string]string{
+			"APP_ENV":          "override",
+			"PYTHONUNBUFFERED": "0",
+		},
+		true,
+	)
+	env := utils.EnvironmentMap(environ)
+
+	if env["APP_ENV"] != "override" {
+		t.Fatalf("expected APP_ENV override, got %q", env["APP_ENV"])
+	}
+	if env["PYTHONUNBUFFERED"] != "0" {
+		t.Fatalf("expected explicit PYTHONUNBUFFERED override, got %q", env["PYTHONUNBUFFERED"])
+	}
+}

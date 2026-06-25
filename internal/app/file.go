@@ -8,13 +8,14 @@ import (
 )
 
 type Data struct {
-	Name           string   `json:"name"`
-	Args           []string `json:"args"`
-	ExecutablePath string   `json:"executable_path"`
-	AutoRestart    bool     `json:"autorestart"`
-	Cwd            string   `json:"cwd"`
-	Scripts        []string `json:"scripts"`
-	CronRestart    string   `json:"cron_restart"`
+	Name           string            `json:"name"`
+	Args           []string          `json:"args"`
+	ExecutablePath string            `json:"executable_path"`
+	AutoRestart    bool              `json:"autorestart"`
+	Cwd            string            `json:"cwd"`
+	Env            map[string]string `json:"env"`
+	Scripts        []string          `json:"scripts"`
+	CronRestart    string            `json:"cron_restart"`
 }
 
 func readFileJson(filePath string) ([]Data, error) {
@@ -48,14 +49,16 @@ func (app *App) StartFile(filePath string) error {
 				AutoRestart:    p.AutoRestart,
 				Cwd:            p.Cwd,
 				CronRestart:    p.CronRestart,
+				Env:            p.Env,
 			})
 		} else {
+			restartProcess := processFromData(process.Id, p)
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.RestartProcess(process)
+				app.RestartProcess(restartProcess)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
-				app.RestartProcess(process)
+				app.RestartProcess(restartProcess)
 			}
 		}
 	}
@@ -136,6 +139,7 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				AutoRestart:    p.AutoRestart,
 				Cwd:            p.Cwd,
 				CronRestart:    p.CronRestart,
+				Env:            p.Env,
 			})
 		} else {
 			if process.ProcStatus.Status == "online" {
@@ -152,8 +156,22 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				AutoRestart:    p.AutoRestart,
 				Cwd:            p.Cwd,
 				CronRestart:    p.CronRestart,
+				Env:            p.Env,
 			})
 		}
+	}
+}
+
+func processFromData(id int32, data Data) *pb.Process {
+	return &pb.Process{
+		Id:             id,
+		Name:           data.Name,
+		Args:           data.Args,
+		ExecutablePath: data.ExecutablePath,
+		AutoRestart:    data.AutoRestart,
+		Cwd:            data.Cwd,
+		CronRestart:    data.CronRestart,
+		Env:            data.Env,
 	}
 }
 

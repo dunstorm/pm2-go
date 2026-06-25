@@ -79,6 +79,7 @@ func TestPersistStateOnSpawnStopDelete(t *testing.T) {
 		ExecutablePath: "python3",
 		Args:           []string{"-c", "import time; time.sleep(10)"},
 		AutoRestart:    true,
+		Env:            map[string]string{"PM2_GO_TEST_ENV": "persisted"},
 	})
 	if err != nil {
 		t.Fatalf("spawn process: %v", err)
@@ -104,6 +105,9 @@ func TestPersistStateOnSpawnStopDelete(t *testing.T) {
 	}
 	if !state[0].AutoRestart {
 		t.Fatal("expected autorestart to be persisted")
+	}
+	if state[0].Env["PM2_GO_TEST_ENV"] != "persisted" {
+		t.Fatalf("expected persisted env, got %#v", state[0].Env)
 	}
 
 	stopResp, err := manager.StopProcess(ctx, &pb.StopProcessRequest{Id: process.Id})
@@ -137,6 +141,7 @@ func TestRestoreStateSpawnsPersistedProcesses(t *testing.T) {
 			ExecutablePath: "python3",
 			Args:           []string{"-c", "import time; time.sleep(10)"},
 			AutoRestart:    true,
+			Env:            map[string]string{"PM2_GO_RESTORE_ENV": "restored"},
 		},
 	})
 	if err != nil {
@@ -156,6 +161,9 @@ func TestRestoreStateSpawnsPersistedProcesses(t *testing.T) {
 	}
 	if !process.AutoRestart {
 		t.Fatal("expected restored process autorestart flag")
+	}
+	if process.Env["PM2_GO_RESTORE_ENV"] != "restored" {
+		t.Fatalf("expected restored process env, got %#v", process.Env)
 	}
 	if _, running := utils.IsProcessRunning(process.Pid); !running {
 		t.Fatal("expected restored process to be running")

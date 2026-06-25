@@ -12,13 +12,14 @@ import (
 )
 
 type persistedProcess struct {
-	Name           string   `json:"name"`
-	Args           []string `json:"args,omitempty"`
-	Scripts        []string `json:"scripts,omitempty"`
-	ExecutablePath string   `json:"executable_path"`
-	AutoRestart    bool     `json:"autorestart"`
-	Cwd            string   `json:"cwd,omitempty"`
-	CronRestart    string   `json:"cron_restart,omitempty"`
+	Name           string            `json:"name"`
+	Args           []string          `json:"args,omitempty"`
+	Scripts        []string          `json:"scripts,omitempty"`
+	ExecutablePath string            `json:"executable_path"`
+	AutoRestart    bool              `json:"autorestart"`
+	Cwd            string            `json:"cwd,omitempty"`
+	CronRestart    string            `json:"cron_restart,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
 }
 
 func (api *Handler) restoreState() {
@@ -91,6 +92,7 @@ func newPersistedProcess(process *pb.Process) persistedProcess {
 		AutoRestart:    process.AutoRestart,
 		Cwd:            process.Cwd,
 		CronRestart:    process.CronRestart,
+		Env:            utils.CloneStringMap(process.Env),
 	}
 }
 
@@ -103,5 +105,6 @@ func (process persistedProcess) spawnRequest() *pb.SpawnProcessRequest {
 		AutoRestart:    process.AutoRestart,
 		Cwd:            process.Cwd,
 		CronRestart:    process.CronRestart,
+		Env:            process.Env,
 	}
 }

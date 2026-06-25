@@ -84,6 +84,9 @@ array or an object with an `apps` array.
     "args": ["test.py"],
     "autorestart": true,
     "cwd": "./examples",
+    "env": {
+      "APP_ENV": "production"
+    },
     "executable_path": "python3",
     "cron_restart": "* * * * *"
   }
@@ -107,8 +110,13 @@ Supported fields:
 | `executable_path` | Command or executable path to run. |
 | `args` | Arguments passed to the executable. |
 | `cwd` | Working directory for the process. |
+| `env` | Environment variables added to the spawned process. |
 | `autorestart` | Restart the process when it exits unexpectedly. |
 | `cron_restart` | Five-field cron expression for scheduled restarts. |
+
+Environment values are stored with process metadata for restart, dump, and
+daemon restore flows. Keep `$HOME/.pm2-go` private if you store sensitive
+values there.
 
 ## Commands
 

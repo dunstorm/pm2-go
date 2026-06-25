@@ -49,6 +49,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		Cwd:            in.Cwd,
 		Logger:         api.logger,
 		CronRestart:    in.CronRestart,
+		Env:            in.Env,
 	})
 	if err != nil {
 		currentProcess.AutoRestart = false

@@ -15,12 +15,13 @@ import (
 )
 
 type SpawnParams struct {
-	Name           string   `json:"name"`
-	ExecutablePath string   `json:"executablePath"`
-	Args           []string `json:"args"`
-	Cwd            string   `json:"cwd"`
-	AutoRestart    bool     `json:"autorestart"`
-	CronRestart    string   `json:"cron_restart"`
+	Name           string            `json:"name"`
+	ExecutablePath string            `json:"executablePath"`
+	Args           []string          `json:"args"`
+	Cwd            string            `json:"cwd"`
+	Env            map[string]string `json:"env"`
+	AutoRestart    bool              `json:"autorestart"`
+	CronRestart    string            `json:"cron_restart"`
 	Logger         *zerolog.Logger
 
 	PidPilePath string `json:"-"`
@@ -95,6 +96,24 @@ func isPythonExecutable(executablePath string) bool {
 	return true
 }
 
+func commandEnvironment(base []string, overrides map[string]string, pythonExecutable bool) []string {
+	environment := utils.EnvironmentMap(base)
+	if pythonExecutable {
+		if _, hasOverride := overrides["PYTHONUNBUFFERED"]; !hasOverride {
+			if _, exists := environment["PYTHONUNBUFFERED"]; !exists {
+				environment["PYTHONUNBUFFERED"] = "1"
+			}
+		}
+	}
+	for key, value := range overrides {
+		if key == "" {
+			continue
+		}
+		environment[key] = value
+	}
+	return utils.EnvironmentSlice(environment)
+}
+
 func (params *SpawnParams) createFiles() error {
 	var err error
 	if params.logFile, err = os.OpenFile(params.LogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
@@ -141,10 +160,7 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 
 	cmd := exec.Command(params.ExecutablePath, params.Args...)
 	cmd.Dir = params.Cwd
-	cmd.Env = os.Environ()
-	if isPythonExecutable(params.ExecutablePath) {
-		cmd.Env = append(cmd.Env, "PYTHONUNBUFFERED=1")
-	}
+	cmd.Env = commandEnvironment(os.Environ(), params.Env, isPythonExecutable(params.ExecutablePath))
 	cmd.Stdin = params.nullFile
 	cmd.Stdout = stdoutWriter
 	cmd.Stderr = stderrWriter
@@ -190,6 +206,7 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		PidFilePath:    params.PidPilePath,
 		AutoRestart:    params.AutoRestart,
 		CronRestart:    params.CronRestart,
+		Env:            utils.CloneStringMap(params.Env),
 	}
 
 	return rpcProcess, nil
