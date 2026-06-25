@@ -4,3 +4,4 @@ bin/**
 !bin/.gitkeep
 dist/
 .*
+!.goreleaser.yaml

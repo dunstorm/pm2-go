@@ -3,18 +3,18 @@ protoc:
 	cd proto && protoc --go_out=. --go-grpc_out=. *.proto
 
 build:
-	go build -o bin/pm2-go main.go
+	go build -o bin/pm2-go ./cmd/pm2-go
 
 install:
-	go install .
+	go install ./cmd/pm2-go
 
 daemon:
-	go build -o bin/pm2-go main.go
+	go build -o bin/pm2-go ./cmd/pm2-go
 	./bin/pm2-go kill
 	./bin/pm2-go -d
 
 test/quick/start:
-	go build -o bin/pm2-go main.go
+	go build -o bin/pm2-go ./cmd/pm2-go
 	./bin/pm2-go start examples/ecosystem.json
 
 test/quick/stop:
@@ -32,7 +32,7 @@ logs:
 	./bin/pm2-go logs python-test
 
 test:
-	go test -v
+	go test -v ./...
 
 dump:
 	./bin/pm2-go dump
