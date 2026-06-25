@@ -30,3 +30,26 @@ func TestFindOrCreateConfigFileCreatesHomeDirectory(t *testing.T) {
 		}
 	}
 }
+
+func TestGetMainDirectoryUsesPM2GoHome(t *testing.T) {
+	pm2Home := filepath.Join(t.TempDir(), "runtime")
+	t.Setenv("PM2_GO_HOME", pm2Home)
+
+	if got := GetMainDirectory(); got != pm2Home {
+		t.Fatalf("expected PM2_GO_HOME directory %q, got %q", pm2Home, got)
+	}
+
+	for _, dir := range []string{
+		pm2Home,
+		filepath.Join(pm2Home, "pids"),
+		filepath.Join(pm2Home, "logs"),
+	} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("expected directory %q to exist: %v", dir, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("expected %q to be a directory", dir)
+		}
+	}
+}

@@ -140,7 +140,9 @@ values there.
 
 ## Daemon and Files
 
-PM2-GO stores runtime data under `$HOME/.pm2-go`:
+PM2-GO stores runtime data under `$HOME/.pm2-go` by default. Set
+`PM2_GO_HOME` to use a different runtime directory for isolated tests or
+side-by-side migrations.
 
 | Path | Purpose |
 | --- | --- |

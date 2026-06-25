@@ -40,13 +40,15 @@ func IsProcessRunning(pid int32) (*os.Process, bool) {
 
 // get pm2-go main directory
 func GetMainDirectory() string {
-	dirname, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	dirname := os.Getenv("PM2_GO_HOME")
+	if dirname == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		dirname = path.Join(home, ".pm2-go")
 	}
-	// add pm2-go directory
-	dirname = path.Join(dirname, ".pm2-go")
 
 	for _, directory := range []string{dirname, path.Join(dirname, "pids"), path.Join(dirname, "logs")} {
 		if err := os.MkdirAll(directory, 0755); err != nil {
