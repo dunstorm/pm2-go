@@ -39,19 +39,6 @@ func (c *Client) Dial() (*grpc.ClientConn, *pb.ProcessManagerClient) {
 	return conn, &client
 }
 
-// create process
-func (c *Client) AddProcess(request *pb.AddProcessRequest) int32 {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	conn, manager := c.Dial()
-	defer conn.Close()
-	r, err := (*manager).AddProcess(ctx, request)
-	if err != nil {
-		c.logger.Fatal().Msgf("%s", err.Error())
-	}
-	return r.GetId()
-}
-
 // find process
 func (c *Client) FindProcess(name string) *pb.Process {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -91,13 +78,13 @@ func (c *Client) ListProcess() []*pb.Process {
 	return r.GetProcesses()
 }
 
-// update process
-func (c *Client) StartProcess(request *pb.StartProcessRequest) *pb.Process {
+// restart process inside server
+func (c *Client) RestartProcess(request *pb.RestartProcessRequest) *pb.Process {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	conn, manager := c.Dial()
 	defer conn.Close()
-	r, err := (*manager).StartProcess(ctx, request)
+	r, err := (*manager).RestartProcess(ctx, request)
 	if err != nil {
 		c.logger.Fatal().Msgf("%s", err.Error())
 	}

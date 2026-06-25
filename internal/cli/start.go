@@ -3,7 +3,7 @@ package cli
 import (
 	"os"
 
-	processrunner "github.com/dunstorm/pm2-go/internal/process"
+	"github.com/dunstorm/pm2-go/internal/app"
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +58,7 @@ var startCmd = &cobra.Command{
 		}
 
 		// add process to the database
-		master.SpawnProcess(processrunner.SpawnParams{
+		master.SpawnProcess(app.SpawnParams{
 			ExecutablePath: args[0],
 			Args:           args[1:],
 		})

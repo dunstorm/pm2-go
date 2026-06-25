@@ -21,6 +21,18 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 
 	api.logger.Info().Msgf("Attempting to spawn process with name: %s, executable: %s", in.Name, in.ExecutablePath)
 
+	var nextStartAt *timestamppb.Timestamp
+	if in.CronRestart != "" {
+		api.logger.Info().Msgf("Parsing cron expression: %s", in.CronRestart)
+		expr, err := cronexpr.Parse(in.CronRestart)
+		if err != nil {
+			api.logger.Error().Err(err).Msg("Invalid cron expression")
+			return nil, status.Errorf(400, "Invalid cron expression: %v", err)
+		}
+		nextStartAt = timestamppb.New(expr.Next(time.Now()))
+		api.logger.Info().Msgf("Next scheduled restart at: %v", nextStartAt.AsTime())
+	}
+
 	// shared: spawn new process
 	process, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
 		Name:           in.Name,
@@ -50,17 +62,7 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 		Memory:    "0.0MB",
 		ParentPid: int32(os.Getpid()),
 	}
-
-	if in.CronRestart != "" {
-		api.logger.Info().Msgf("Parsing cron expression: %s", in.CronRestart)
-		expr, err := cronexpr.Parse(in.CronRestart)
-		if err != nil {
-			api.logger.Error().Err(err).Msg("Invalid cron expression")
-			return nil, status.Errorf(400, "Invalid cron expression: %v", err)
-		}
-		process.NextStartAt = timestamppb.New(expr.Next(time.Now()))
-		api.logger.Info().Msgf("Next scheduled restart at: %v", process.NextStartAt.AsTime())
-	}
+	process.NextStartAt = nextStartAt
 
 	osProcess, running := utils.GetProcess(process.Pid)
 	if !running {

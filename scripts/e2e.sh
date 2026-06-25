@@ -59,6 +59,34 @@ assert_line_count() {
 	fi
 }
 
+process_parent_pid() {
+	local output="$1"
+	local name="$2"
+
+	printf '%s\n' "$output" | awk -F'│' -v name="$name" '
+		index($0, name) {
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", $5)
+			print $5
+			exit
+		}
+	'
+}
+
+assert_parent_is_daemon() {
+	local output="$1"
+	local name="$2"
+	local expected
+	local actual
+
+	expected="$(cat "$TMP_HOME/.pm2-go/daemon.pid")"
+	actual="$(process_parent_pid "$output" "$name")"
+
+	if [[ -z "$actual" || "$actual" != "$expected" ]]; then
+		printf '%s\n' "$output" >&2
+		fail "expected $name parent pid to be daemon $expected, found ${actual:-missing}"
+	fi
+}
+
 assert_file_empty() {
 	local file="$1"
 	local size
@@ -214,6 +242,7 @@ sleep 1
 
 ecosystem_ls="$(wait_for_ls_contains "python-test" "online")"
 assert_line_count "$ecosystem_ls" "python-test" 1
+assert_parent_is_daemon "$ecosystem_ls" "python-test"
 
 log "status after daemon start"
 status_output="$(capture_pm2 status)"
@@ -251,12 +280,14 @@ restart_output="$(run_pm2 restart python-test)"
 assert_contains "$restart_output" "python-test"
 assert_contains "$restart_output" "online"
 assert_line_count "$restart_output" "python-test" 1
+assert_parent_is_daemon "$restart_output" "python-test"
 
 log "restart all"
 restart_all_output="$(run_pm2 restart all)"
 assert_contains "$restart_all_output" "python-test"
 assert_contains "$restart_all_output" "online"
 assert_line_count "$restart_all_output" "python-test" 1
+assert_parent_is_daemon "$restart_all_output" "python-test"
 
 log "stop all"
 stop_all_output="$(run_pm2 stop all)"
@@ -274,6 +305,7 @@ start_all_output="$(run_pm2 start all)"
 assert_contains "$start_all_output" "python-test"
 assert_contains "$start_all_output" "online"
 assert_line_count "$start_all_output" "python-test" 1
+assert_parent_is_daemon "$start_all_output" "python-test"
 
 log "dump process list"
 dump_output="$(capture_pm2 dump e2e-dump)"
@@ -293,6 +325,7 @@ restored_ls="$(run_pm2 ls)"
 assert_contains "$restored_ls" "python-test"
 assert_contains "$restored_ls" "online"
 assert_line_count "$restored_ls" "python-test" 1
+assert_parent_is_daemon "$restored_ls" "python-test"
 
 log "delete restored process"
 delete_all_output="$(capture_pm2 delete all)"
@@ -322,6 +355,7 @@ log "direct command"
 run_pm2 start -- python3 -c 'import time; time.sleep(20)' >/dev/null
 direct_ls="$(wait_for_ls_contains "python3" "online")"
 assert_line_count "$direct_ls" "python3" 1
+assert_parent_is_daemon "$direct_ls" "python3"
 
 log "delete direct command"
 run_pm2 delete all >/dev/null
@@ -335,6 +369,7 @@ if [[ "$E2E_SLOW" == "1" ]]; then
 	run_pm2 stop cron-test >/dev/null
 	cron_ls="$(wait_for_ls_contains "cron-test" "online" 75)"
 	assert_line_count "$cron_ls" "cron-test" 1
+	assert_parent_is_daemon "$cron_ls" "cron-test"
 	run_pm2 delete cron-test >/dev/null
 else
 	log "skip slow cron firing check; set E2E_SLOW=1 to enable"

@@ -7,11 +7,9 @@ import (
 
 	"github.com/dunstorm/pm2-go/internal/app"
 	"github.com/dunstorm/pm2-go/internal/grpc/client"
-	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	"github.com/dunstorm/pm2-go/internal/testutil"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
-	"github.com/rs/zerolog"
 )
 
 func isServerRunning(port int) bool {
@@ -26,29 +24,6 @@ func isProcessAdded(master *app.App, name string) bool {
 func isProcessRunning(master *app.App, name string) bool {
 	process := master.FindProcess(name)
 	return process != nil && process.Pid != 0
-}
-
-func TestSpawn(t *testing.T) {
-	zerolog.SetGlobalLevel(zerolog.Disabled)
-
-	spawnedProcess, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
-		ExecutablePath: "python3",
-		Args:           []string{"examples/test.py"},
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if spawnedProcess == nil {
-		t.Fatal("process is nil")
-	}
-
-	processFound, running := utils.IsProcessRunning(spawnedProcess.Pid)
-	if !running {
-		t.Fatal("process is not running")
-	}
-	processFound.Kill()
 }
 
 func TestStartEcosystem(t *testing.T) {

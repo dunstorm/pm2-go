@@ -3,7 +3,6 @@ package app
 import (
 	"testing"
 
-	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	"github.com/dunstorm/pm2-go/internal/testutil"
 )
 
@@ -20,7 +19,7 @@ func TestNew(t *testing.T) {
 func TestProcessLifecycle(t *testing.T) {
 	app := NewWithPort(testutil.StartGRPCServer(t))
 
-	if !app.SpawnProcess(processrunner.SpawnParams{
+	if !app.SpawnProcess(SpawnParams{
 		Name:           "test-process",
 		ExecutablePath: "python3",
 		Args:           []string{"-c", "import time; time.sleep(10)"},
@@ -58,7 +57,7 @@ func TestProcessLifecycle(t *testing.T) {
 func TestProcessRestart(t *testing.T) {
 	app := NewWithPort(testutil.StartGRPCServer(t))
 
-	if !app.SpawnProcess(processrunner.SpawnParams{
+	if !app.SpawnProcess(SpawnParams{
 		Name:           "restart-test",
 		ExecutablePath: "python3",
 		Args:           []string{"-c", "import time; time.sleep(10)"},

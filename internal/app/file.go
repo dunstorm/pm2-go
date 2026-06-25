@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 
-	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	pb "github.com/dunstorm/pm2-go/proto"
 )
 
@@ -42,7 +41,7 @@ func (app *App) StartFile(filePath string) error {
 	for _, p := range payload {
 		process := app.FindProcess(p.Name)
 		if process == nil {
-			app.SpawnProcess(processrunner.SpawnParams{
+			app.SpawnProcess(SpawnParams{
 				Name:           p.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
@@ -56,7 +55,7 @@ func (app *App) StartFile(filePath string) error {
 				app.RestartProcess(process)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
-				app.StartProcess(process)
+				app.RestartProcess(process)
 			}
 		}
 	}
@@ -130,40 +129,30 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 	for _, p := range allProcesses {
 		process := app.FindProcess(p.Name)
 		if process == nil || process.ProcStatus == nil {
-			process, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
+			app.SpawnProcess(SpawnParams{
 				Name:           p.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
 				AutoRestart:    p.AutoRestart,
-				Logger:         app.logger,
 				Cwd:            p.Cwd,
 				CronRestart:    p.CronRestart,
 			})
-			if err != nil {
-				app.logger.Fatal().Msgf("Error while restoring process [%s]", p.Name)
-			}
-			app.AddProcess(process)
 		} else {
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.StopProcess(process.Id)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
 			}
-			newProcess, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
-				Name:           process.Name,
+			p.Id = process.Id
+			app.RestartProcess(&pb.Process{
+				Id:             p.Id,
+				Name:           p.Name,
 				Args:           p.Args,
 				ExecutablePath: p.ExecutablePath,
 				AutoRestart:    p.AutoRestart,
-				Logger:         app.logger,
 				Cwd:            p.Cwd,
 				CronRestart:    p.CronRestart,
 			})
-			if err != nil {
-				app.logger.Fatal().Msgf("Error while restoring process [%s]", err.Error())
-			}
-			newProcess.Id = process.Id
-			app.StartProcess(newProcess)
 		}
 	}
 }
