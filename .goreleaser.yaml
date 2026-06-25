@@ -14,7 +14,8 @@ builds:
       - darwin
 
 archives:
-  - format: binary
+  - formats:
+      - binary
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:

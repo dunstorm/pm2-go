@@ -1,5 +1,6 @@
 # PM2-GO
 
+[![CI](https://github.com/dunstorm/pm2-go/actions/workflows/ci.yml/badge.svg)](https://github.com/dunstorm/pm2-go/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/dunstorm/pm2-go)](https://goreportcard.com/report/github.com/dunstorm/pm2-go)
 
 PM2-GO is a small, PM2-inspired process manager written in Go. It runs a local
@@ -219,3 +220,13 @@ For a local release dry run:
 ```sh
 goreleaser release --snapshot --clean
 ```
+
+Publishing a release is tag-driven. Push a version tag from `main`:
+
+```sh
+git tag v0.1.2
+git push origin v0.1.2
+```
+
+The `Release` GitHub Actions workflow runs GoReleaser and publishes the GitHub
+release from that tag.
