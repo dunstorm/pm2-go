@@ -362,6 +362,16 @@ run_pm2 delete all >/dev/null
 final_ls="$(run_pm2 ls)"
 assert_not_contains "$final_ls" "python3"
 
+log "absolute executable command"
+absolute_python="$(command -v python3)"
+run_pm2 start -- "$absolute_python" -c 'import time; time.sleep(20)' >/dev/null
+absolute_ls="$(wait_for_ls_contains "python3" "online")"
+assert_line_count "$absolute_ls" "python3" 1
+assert_parent_is_daemon "$absolute_ls" "python3"
+[[ -f "$TMP_HOME/.pm2-go/pids/python3.pid" ]] || fail "expected sanitized pid file for absolute executable"
+[[ -f "$TMP_HOME/.pm2-go/logs/python3-out.log" ]] || fail "expected sanitized stdout log for absolute executable"
+run_pm2 delete python3 >/dev/null
+
 if [[ "$E2E_SLOW" == "1" ]]; then
 	log "cron restart firing"
 	write_cron_ecosystem

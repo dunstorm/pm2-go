@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -38,7 +38,7 @@ func (params *SpawnParams) fillDefaults() error {
 	}
 
 	if params.Name == "" {
-		params.Name = strings.ToLower(params.ExecutablePath)
+		params.Name = defaultProcessName(params.ExecutablePath)
 	}
 
 	if params.Logger == nil {
@@ -49,12 +49,27 @@ func (params *SpawnParams) fillDefaults() error {
 		params.Cwd, _ = os.Getwd()
 	}
 
-	nameLower := strings.ToLower(params.Name)
-	params.PidPilePath = path.Join(utils.GetMainDirectory(), "pids", fmt.Sprintf("%s.pid", nameLower))
-	params.LogFilePath = path.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-out.log", nameLower))
-	params.ErrFilePath = path.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-err.log", nameLower))
+	fileName := processFileName(params.Name)
+	params.PidPilePath = filepath.Join(utils.GetMainDirectory(), "pids", fmt.Sprintf("%s.pid", fileName))
+	params.LogFilePath = filepath.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-out.log", fileName))
+	params.ErrFilePath = filepath.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-err.log", fileName))
 
 	return nil
+}
+
+func defaultProcessName(executablePath string) string {
+	return strings.ToLower(filepath.Base(executablePath))
+}
+
+func processFileName(name string) string {
+	replacer := strings.NewReplacer("/", "-", "\\", "-")
+	fileName := strings.ToLower(strings.TrimSpace(name))
+	fileName = replacer.Replace(fileName)
+	fileName = strings.Trim(fileName, ".- ")
+	if fileName == "" {
+		return "process"
+	}
+	return fileName
 }
 
 func (params *SpawnParams) createFiles() error {
@@ -76,8 +91,7 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		return nil, err
 	}
 
-	splitExecutablePath := strings.Split(params.ExecutablePath, "/")
-	if splitExecutablePath[len(splitExecutablePath)-1] == "python" && len(params.Args) > 0 && params.Args[0] != "-u" {
+	if filepath.Base(params.ExecutablePath) == "python" && len(params.Args) > 0 && params.Args[0] != "-u" {
 		params.Logger.Warn().Msg("Add -u flag to prevent output buffering on python")
 	}
 

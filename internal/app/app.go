@@ -1,6 +1,9 @@
 package app
 
 import (
+	"path/filepath"
+	"strings"
+
 	"github.com/dunstorm/pm2-go/internal/grpc/client"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
@@ -86,7 +89,7 @@ func (app *App) SpawnProcess(params SpawnParams) bool {
 
 	name := params.Name
 	if name == "" {
-		name = params.ExecutablePath
+		name = strings.ToLower(filepath.Base(params.ExecutablePath))
 	}
 	app.logger.Info().Msgf("[%s] ✓", name)
 
