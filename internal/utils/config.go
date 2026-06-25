@@ -1,6 +1,9 @@
 package utils
 
-import "os"
+import (
+	"os"
+	"path"
+)
 
 type Config struct {
 	LogRotate         bool `json:"logrotate"`
@@ -10,7 +13,7 @@ type Config struct {
 
 // find or create config file
 func FindOrCreateConfigFile() string {
-	configFile := os.Getenv("HOME") + "/.pm2-go/config.json"
+	configFile := path.Join(GetMainDirectory(), "config.json")
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		err := SaveObject(configFile, Config{
 			LogRotate:         false,

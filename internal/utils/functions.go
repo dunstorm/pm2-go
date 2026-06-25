@@ -45,13 +45,15 @@ func GetMainDirectory() string {
 		os.Exit(1)
 	}
 	// add pm2-go directory
-	dirname = dirname + "/.pm2-go"
-	// if dirname doesnt exist create it
-	if _, err := os.Stat(dirname); os.IsNotExist(err) {
-		os.Mkdir(dirname, 0755)
-		os.Mkdir(dirname+"/pids", 0755)
-		os.Mkdir(dirname+"/logs", 0755)
+	dirname = path.Join(dirname, ".pm2-go")
+
+	for _, directory := range []string{dirname, path.Join(dirname, "pids"), path.Join(dirname, "logs")} {
+		if err := os.MkdirAll(directory, 0755); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 	}
+
 	// return dirname
 	return dirname
 }
