@@ -116,7 +116,11 @@ func (app *App) SpawnProcess(params processrunner.SpawnParams) bool {
 		return false
 	}
 
-	app.logger.Info().Msgf("[%s] ✓", params.Name)
+	name := params.Name
+	if name == "" {
+		name = params.ExecutablePath
+	}
+	app.logger.Info().Msgf("[%s] ✓", name)
 
 	return resp.Success
 }

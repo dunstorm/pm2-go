@@ -62,9 +62,6 @@ var startCmd = &cobra.Command{
 			ExecutablePath: args[0],
 			Args:           args[1:],
 		})
-		process = master.FindProcess(args[0])
-		master.GetLogger().Info().Msgf("Applying action addProcessName on app [%s](pid: [ %d ])", process.Name, process.Pid)
-		master.AddProcess(process)
 
 		renderProcessList()
 	},
