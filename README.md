@@ -58,7 +58,7 @@ make install
 From the repository root:
 
 ```sh
-pm2-go start python3 -u examples/test.py
+pm2-go start python3 examples/test.py
 pm2-go ls
 pm2-go describe python3
 pm2-go logs -l 50 python3
@@ -81,7 +81,7 @@ array or an object with an `apps` array.
 [
   {
     "name": "python-test",
-    "args": ["-u", "test.py"],
+    "args": ["test.py"],
     "autorestart": true,
     "cwd": "./examples",
     "executable_path": "python3",

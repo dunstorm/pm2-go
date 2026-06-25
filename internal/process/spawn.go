@@ -72,6 +72,29 @@ func processFileName(name string) string {
 	return fileName
 }
 
+func isPythonExecutable(executablePath string) bool {
+	base := strings.ToLower(filepath.Base(executablePath))
+	if base == "python" {
+		return true
+	}
+	if !strings.HasPrefix(base, "python") {
+		return false
+	}
+
+	suffix := strings.TrimPrefix(base, "python")
+	for _, part := range strings.Split(suffix, ".") {
+		if part == "" {
+			return false
+		}
+		for _, char := range part {
+			if char < '0' || char > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (params *SpawnParams) createFiles() error {
 	var err error
 	if params.logFile, err = os.OpenFile(params.LogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
@@ -89,10 +112,6 @@ func (params *SpawnParams) createFiles() error {
 func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	if err := params.fillDefaults(); err != nil {
 		return nil, err
-	}
-
-	if filepath.Base(params.ExecutablePath) == "python" && len(params.Args) > 0 && params.Args[0] != "-u" {
-		params.Logger.Warn().Msg("Add -u flag to prevent output buffering on python")
 	}
 
 	if err := params.createFiles(); err != nil {
@@ -123,7 +142,9 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	cmd := exec.Command(params.ExecutablePath, params.Args...)
 	cmd.Dir = params.Cwd
 	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, "PYTHONUNBUFFERED=1")
+	if isPythonExecutable(params.ExecutablePath) {
+		cmd.Env = append(cmd.Env, "PYTHONUNBUFFERED=1")
+	}
 	cmd.Stdin = params.nullFile
 	cmd.Stdout = stdoutWriter
 	cmd.Stderr = stderrWriter

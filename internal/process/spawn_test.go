@@ -79,3 +79,25 @@ func TestFillDefaultsSanitizesFileNames(t *testing.T) {
 		t.Fatalf("expected pid file %q, got %q", expectedPidFile, params.PidPilePath)
 	}
 }
+
+func TestIsPythonExecutable(t *testing.T) {
+	tests := []struct {
+		name           string
+		executablePath string
+		want           bool
+	}{
+		{name: "python", executablePath: "python", want: true},
+		{name: "python3", executablePath: "python3", want: true},
+		{name: "python versioned", executablePath: "/usr/local/bin/python3.12", want: true},
+		{name: "python config helper", executablePath: "python3-config", want: false},
+		{name: "not python", executablePath: "node", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isPythonExecutable(tt.executablePath); got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
+	}
+}
