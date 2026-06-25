@@ -14,6 +14,13 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	process := api.databaseById[in.Id]
 	found := api.processes[in.Id]
 
+	if process == nil {
+		api.logger.Info().Msgf("process not found: %d", in.Id)
+		return &pb.StopProcessResponse{
+			Success: false,
+		}, nil
+	}
+
 	process.SetStatus("stopped")
 	process.ResetCPUMemory()
 	process.StopSignal = true

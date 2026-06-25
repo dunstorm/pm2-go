@@ -12,6 +12,16 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 	defer api.mu.Unlock()
 
 	process := api.databaseById[in.Id]
+	if process == nil {
+		api.logger.Info().Msgf("process not found: %d", in.Id)
+		return &pb.DeleteProcessResponse{
+			Success: false,
+		}, nil
+	}
+
+	if found := api.processes[in.Id]; found != nil {
+		found.Kill()
+	}
 
 	delete(api.databaseById, process.Id)
 	delete(api.databaseByName, process.Name)
