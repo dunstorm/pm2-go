@@ -8,13 +8,12 @@ package proto;
 option go_package = ".";
 
 service ProcessManager {
-    rpc AddProcess (AddProcessRequest) returns (Process) {}
-    rpc StartProcess (StartProcessRequest) returns (Process) {}
     rpc StopProcess (StopProcessRequest) returns (StopProcessResponse) {}
     rpc FindProcess (FindProcessRequest) returns (Process) {}
     rpc DeleteProcess (DeleteProcessRequest) returns (DeleteProcessResponse) {}
     rpc ListProcess (ListProcessRequest) returns (ListProcessResponse) {}
     rpc SpawnProcess (SpawnProcessRequest) returns (SpawnProcessResponse) {}
+    rpc RestartProcess (RestartProcessRequest) returns (Process) {}
 }
 
 message ProcStatus {
@@ -47,20 +46,6 @@ message Process {
     int32 log_file_count = 16;
 }
 
-message AddProcessRequest {
-    string name = 2;
-    repeated string args = 3;
-    repeated string scripts = 4;
-    string executable_path = 5;
-    int32 pid = 6;
-    bool auto_restart = 7;
-    string cwd = 8;
-    string pid_file_path = 9;
-    string log_file_path = 10;
-    string err_file_path = 11;
-    string cron_restart = 12;
-}
-
 message FindProcessRequest {
     string name = 1;
 }
@@ -72,21 +57,6 @@ message StopProcessRequest {
 
 message StopProcessResponse {
     bool success = 1;
-}
-
-message StartProcessRequest {
-    int32 id = 1;
-    string name = 2;
-    repeated string args = 3;
-    repeated string scripts = 4;
-    string executable_path = 5;
-    int32 pid = 6;
-    bool auto_restart = 7;
-    string cwd = 8;
-    string pid_file_path = 9;
-    string log_file_path = 10;
-    string err_file_path = 11;
-    string cron_restart = 12;
 }
 
 message ListProcessRequest {}
@@ -115,4 +85,15 @@ message SpawnProcessRequest {
 
 message SpawnProcessResponse {
     bool success = 1;
+}
+
+message RestartProcessRequest {
+    int32 id = 1;
+    string name = 2;
+    repeated string args = 3;
+    repeated string scripts = 4;
+    string executable_path = 5;
+    bool auto_restart = 7;
+    string cwd = 8;
+    string cron_restart = 12;
 }
