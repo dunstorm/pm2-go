@@ -99,4 +99,7 @@ message RestartProcessRequest {
     string cwd = 8;
     string cron_restart = 12;
     map<string, string> env = 13;
+    bool graceful = 14;
+    string signal = 15;
+    int32 kill_timeout_ms = 16;
 }

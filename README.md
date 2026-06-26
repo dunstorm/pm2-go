@@ -142,6 +142,7 @@ and still lets the file's `env` values override matching keys.
 | `pm2-go logs [-l lines] <name\|id>` | Tail stdout and stderr logs. |
 | `pm2-go stop <name\|id\|file.json\|all>` | Stop processes without removing them from the process list. |
 | `pm2-go restart [--update-env] <name\|id\|file.json\|all>` | Restart processes. |
+| `pm2-go reload [--signal SIGTERM] [--kill-timeout 1600] [--update-env] <name\|id\|file.json\|all>` | Gracefully reload processes before force-kill fallback. |
 | `pm2-go delete <name\|id\|file.json\|all>` | Stop and remove processes from the process list. |
 | `pm2-go flush [name\|id\|file.json\|all]` | Truncate process log files. |
 | `pm2-go dump [name]` | Save the current process list to `$HOME/.pm2-go/<name>.json`. |

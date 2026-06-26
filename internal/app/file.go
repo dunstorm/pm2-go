@@ -20,7 +20,10 @@ type Data struct {
 }
 
 type StartFileOptions struct {
-	Env map[string]string
+	Env           map[string]string
+	Graceful      bool
+	Signal        string
+	KillTimeoutMS int32
 }
 
 func readFileJson(filePath string) ([]Data, error) {
@@ -69,10 +72,18 @@ func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) 
 			restartProcess := processFromData(process.Id, p, env)
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.RestartProcess(restartProcess)
+				app.RestartProcessWithOptions(restartProcess, RestartOptions{
+					Graceful:      options.Graceful,
+					Signal:        options.Signal,
+					KillTimeoutMS: options.KillTimeoutMS,
+				})
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
-				app.RestartProcess(restartProcess)
+				app.RestartProcessWithOptions(restartProcess, RestartOptions{
+					Graceful:      options.Graceful,
+					Signal:        options.Signal,
+					KillTimeoutMS: options.KillTimeoutMS,
+				})
 			}
 		}
 	}

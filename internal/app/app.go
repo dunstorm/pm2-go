@@ -20,6 +20,13 @@ type SpawnParams struct {
 	CronRestart    string
 }
 
+type RestartOptions struct {
+	Env           map[string]string
+	Graceful      bool
+	Signal        string
+	KillTimeoutMS int32
+}
+
 type App struct {
 	client *client.Client
 	logger *zerolog.Logger
@@ -58,12 +65,16 @@ func (app *App) StopProcess(index int32) bool {
 }
 
 func (app *App) RestartProcess(process *pb.Process) *pb.Process {
-	return app.RestartProcessWithEnv(process, nil)
+	return app.RestartProcessWithOptions(process, RestartOptions{})
 }
 
 func (app *App) RestartProcessWithEnv(process *pb.Process, env map[string]string) *pb.Process {
-	if env == nil {
-		env = process.Env
+	return app.RestartProcessWithOptions(process, RestartOptions{Env: env})
+}
+
+func (app *App) RestartProcessWithOptions(process *pb.Process, options RestartOptions) *pb.Process {
+	if options.Env == nil {
+		options.Env = process.Env
 	}
 
 	return app.client.RestartProcess(&pb.RestartProcessRequest{
@@ -74,7 +85,10 @@ func (app *App) RestartProcessWithEnv(process *pb.Process, env map[string]string
 		AutoRestart:    process.AutoRestart,
 		Cwd:            process.Cwd,
 		CronRestart:    process.CronRestart,
-		Env:            env,
+		Env:            options.Env,
+		Graceful:       options.Graceful,
+		Signal:         options.Signal,
+		KillTimeoutMs:  options.KillTimeoutMS,
 	})
 }
 

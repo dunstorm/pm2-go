@@ -3,6 +3,9 @@ package server
 import (
 	"context"
 	"os"
+	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aptible/supercronic/cronexpr"
@@ -13,6 +16,73 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+const defaultReloadKillTimeout = 1600 * time.Millisecond
+
+func reloadSignal(name string) (os.Signal, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(name))
+	if normalized == "" {
+		return syscall.SIGTERM, nil
+	}
+	if value, err := strconv.Atoi(normalized); err == nil {
+		return syscall.Signal(value), nil
+	}
+	if !strings.HasPrefix(normalized, "SIG") {
+		normalized = "SIG" + normalized
+	}
+
+	switch normalized {
+	case "SIGHUP":
+		return syscall.SIGHUP, nil
+	case "SIGINT":
+		return syscall.SIGINT, nil
+	case "SIGQUIT":
+		return syscall.SIGQUIT, nil
+	case "SIGTERM":
+		return syscall.SIGTERM, nil
+	case "SIGUSR1":
+		return syscall.SIGUSR1, nil
+	case "SIGUSR2":
+		return syscall.SIGUSR2, nil
+	default:
+		return nil, status.Errorf(400, "unsupported reload signal: %s", name)
+	}
+}
+
+func waitForProcessExit(pid int32, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, running := utils.IsProcessRunning(pid); !running {
+			return true
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	_, running := utils.IsProcessRunning(pid)
+	return !running
+}
+
+func stopProcessForRestart(found *os.Process, pid int32, in *pb.RestartProcessRequest) error {
+	if !in.Graceful {
+		return found.Kill()
+	}
+
+	signal, err := reloadSignal(in.Signal)
+	if err != nil {
+		return err
+	}
+	if err := found.Signal(signal); err != nil {
+		return err
+	}
+
+	timeout := defaultReloadKillTimeout
+	if in.KillTimeoutMs > 0 {
+		timeout = time.Duration(in.KillTimeoutMs) * time.Millisecond
+	}
+	if waitForProcessExit(pid, timeout) {
+		return nil
+	}
+	return found.Kill()
+}
 
 func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessRequest) (*pb.Process, error) {
 	api.mu.Lock()
@@ -33,11 +103,14 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	}
 
 	if found := api.processes[in.Id]; found != nil {
+		pid := currentProcess.Pid
+		if err := stopProcessForRestart(found, pid, in); err != nil {
+			return nil, err
+		}
 		currentProcess.SetStatus("stopped")
 		currentProcess.ResetCPUMemory()
 		currentProcess.StopSignal = true
 		currentProcess.ResetPid()
-		found.Kill()
 		updateProcessMap(api, in.Id, nil)
 	}
 

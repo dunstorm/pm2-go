@@ -450,6 +450,32 @@ autorestart_ls="$(run_pm2 ls)"
 assert_contains "$autorestart_ls" "autorestart-test"
 run_pm2 delete autorestart-test >/dev/null
 
+log "graceful reload"
+mkdir -p "$TMP_HOME/reload-cwd"
+cat >"$TMP_HOME/reload-cwd/reload.py" <<'PY'
+import signal
+import sys
+import time
+
+def shutdown(signum, frame):
+    print("graceful-signal", flush=True)
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, shutdown)
+print("reload-ready", flush=True)
+time.sleep(20)
+PY
+(cd "$TMP_HOME/reload-cwd" && HOME="$TMP_HOME" "$BIN" start -- python3 reload.py >/dev/null)
+reload_log="$TMP_HOME/.pm2-go/logs/python3-out.log"
+wait_for_file_contains "$reload_log" "reload-ready" 10
+reload_output="$(run_pm2 reload python3 --kill-timeout 2000)"
+assert_contains "$reload_output" "python3"
+assert_contains "$reload_output" "online"
+wait_for_file_contains "$reload_log" "graceful-signal" 10
+reload_ls="$(run_pm2 ls)"
+assert_parent_is_daemon "$reload_ls" "python3"
+run_pm2 delete python3 >/dev/null
+
 log "direct command"
 mkdir -p "$TMP_HOME/direct-cwd"
 cat >"$TMP_HOME/direct-cwd/direct.py" <<'PY'
