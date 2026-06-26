@@ -187,6 +187,45 @@ pm2-go config set logrotate_max_files 10
 Defaults are `logrotate=false`, `logrotate_size=10M`, and
 `logrotate_max_files=10`.
 
+## Benchmarking
+
+PM2-GO includes a small benchmark harness that compares PM2 and PM2-GO CLI
+lifecycle latency. It measures command elapsed time for cold start, list,
+restart, stop, start, and delete flows with managed Python processes.
+
+Run it in Docker, which installs PM2 without changing the host:
+
+```sh
+make benchmark/docker
+```
+
+If `pm2` is already installed locally, run it directly:
+
+```sh
+make benchmark
+```
+
+The benchmark accepts custom sample counts and process counts:
+
+```sh
+./scripts/benchmark_pm2_vs_pm2_go.py --iterations 10 --process-counts 1,10,50
+```
+
+Example median results from the Docker benchmark on Linux arm64 with 5
+iterations:
+
+| Processes | Scenario | PM2 | PM2-GO | Result |
+| --- | --- | ---: | ---: | --- |
+| 1 | cold start | 293.4ms | 17.2ms | PM2-GO 17.07x faster |
+| 1 | list | 79.1ms | 2.7ms | PM2-GO 29.53x faster |
+| 1 | restart all | 185.8ms | 4.2ms | PM2-GO 43.92x faster |
+| 10 | cold start | 322.0ms | 51.8ms | PM2-GO 6.22x faster |
+| 10 | list | 70.5ms | 8.8ms | PM2-GO 7.98x faster |
+| 10 | restart all | 646.3ms | 31.3ms | PM2-GO 20.64x faster |
+
+These numbers measure CLI lifecycle overhead only. They do not measure app
+throughput, long-running daemon memory use, or behavior under production load.
+
 ## Development
 
 Build the CLI:
