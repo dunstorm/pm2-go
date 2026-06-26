@@ -1,6 +1,7 @@
 package process
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -30,6 +31,30 @@ func TestSpawnNewProcess(t *testing.T) {
 		t.Fatal("process is not running")
 	}
 	processFound.Kill()
+}
+
+func TestSpawnNewProcessReturnsPidFileError(t *testing.T) {
+	zerolog.SetGlobalLevel(zerolog.Disabled)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.MkdirAll(filepath.Join(home, ".pm2-go", "pids", "pid-file-conflict.pid"), 0700); err != nil {
+		t.Fatalf("create conflicting pid path: %v", err)
+	}
+
+	process, err := SpawnNewProcess(SpawnParams{
+		Name:           "pid-file-conflict",
+		ExecutablePath: "python3",
+		Args:           []string{"-c", "import time; time.sleep(10)"},
+	})
+	if err == nil {
+		if process != nil {
+			if found, running := utils.IsProcessRunning(process.Pid); running {
+				_ = utils.KillProcessGroup(found)
+			}
+		}
+		t.Fatal("expected pid file write error")
+	}
 }
 
 func TestFillDefaultsUsesExecutableBaseNameForAbsolutePath(t *testing.T) {

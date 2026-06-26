@@ -3,11 +3,7 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 */
 package cli
 
-import (
-	"os"
-
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 // stopCmd represents the stop command
 var stopCmd = &cobra.Command{
@@ -40,8 +36,8 @@ var stopCmd = &cobra.Command{
 		// check if args[0] is a file
 		// get file extension
 		// if it's a json file, parse it and start the app
-		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
-			err = master.StopFile(args[0])
+		if isJSONFilePath(args[0]) {
+			err := master.StopFile(args[0])
 			if err == nil {
 				renderProcessList()
 			} else {

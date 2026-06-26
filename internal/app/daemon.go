@@ -12,6 +12,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const daemonPort = 50051
+
 func isDaemonRunning() bool {
 	directory := utils.GetMainDirectory()
 	// check if daemon.pid exists
@@ -25,7 +27,7 @@ func isDaemonRunning() bool {
 	}
 	// check if process is running by pid
 	if _, running := utils.IsProcessRunning(pid); running {
-		return true
+		return utils.IsPortOpen(daemonPort)
 	}
 	return false
 }
@@ -51,21 +53,29 @@ func (app *App) SpawnDaemon() {
 
 	app.logger.Info().Msgf("Spawning PM2 daemon with pm2_home=%s", utils.GetMainDirectory())
 
-	daemonPidFile := path.Join(utils.GetMainDirectory(), "daemon.pid")
-	daemonLogFile := path.Join(utils.GetMainDirectory(), "daemon.log")
-
-	logFile, err := os.OpenFile(daemonLogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
-	if err != nil {
-		app.logger.Fatal().Msg(err.Error())
-		return
-	}
-	nullFile, err := os.Open(os.DevNull)
-	if err != nil {
-		app.logger.Fatal().Msg(err.Error())
-		return
-	}
-
 	if !wasReborn() {
+		if utils.IsPortOpen(daemonPort) {
+			app.logger.Error().Msgf("PM2 daemon port %d is already in use", daemonPort)
+			os.Exit(1)
+		}
+
+		daemonPidFile := path.Join(utils.GetMainDirectory(), "daemon.pid")
+		daemonLogFile := path.Join(utils.GetMainDirectory(), "daemon.log")
+
+		logFile, err := os.OpenFile(daemonLogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+		if err != nil {
+			app.logger.Fatal().Msg(err.Error())
+			return
+		}
+		defer logFile.Close()
+
+		nullFile, err := os.Open(os.DevNull)
+		if err != nil {
+			app.logger.Fatal().Msg(err.Error())
+			return
+		}
+		defer nullFile.Close()
+
 		// create process
 		var attr = os.ProcAttr{
 			Dir: ".",
@@ -81,7 +91,11 @@ func (app *App) SpawnDaemon() {
 			},
 		}
 
-		binPath, _ := exec.LookPath(os.Args[0])
+		binPath, err := exec.LookPath(os.Args[0])
+		if err != nil {
+			app.logger.Error().Msg(err.Error())
+			return
+		}
 
 		fullCommand := []string{binPath}
 		fullCommand = append(fullCommand, "-d")
@@ -111,7 +125,7 @@ func (app *App) SpawnDaemon() {
 		// wait for 50051 port to open with a timeout of 2s
 		found := false
 		for i := 0; i < 200; i++ {
-			if utils.IsPortOpen(50051) {
+			if utils.IsPortOpen(daemonPort) {
 				found = true
 				break
 			}
@@ -127,6 +141,6 @@ func (app *App) SpawnDaemon() {
 	}
 
 	if wasReborn() {
-		server.New(50051)
+		server.New(daemonPort)
 	}
 }

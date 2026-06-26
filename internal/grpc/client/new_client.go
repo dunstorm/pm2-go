@@ -31,7 +31,7 @@ func New(port int) (*Client, error) {
 
 func (c *Client) Dial() (*grpc.ClientConn, *pb.ProcessManagerClient) {
 	// Set up a connection to the server.
-	conn, err := grpc.Dial(fmt.Sprintf("127.0.0.1:%d", c.port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", c.port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		c.logger.Fatal().Msgf("did not connect: %v", err)
 	}

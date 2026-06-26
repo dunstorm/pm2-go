@@ -201,8 +201,8 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	params.Logger.Info().Msgf("[%s] ✓", params.Name)
 
 	if err := utils.WritePidToFile(params.PidPilePath, cmd.Process.Pid); err != nil {
-		params.Logger.Fatal().Msg(err.Error())
-		cmd.Process.Kill()
+		params.Logger.Error().Err(err).Msg("Failed to write process pid file")
+		_ = utils.KillProcessGroup(cmd.Process)
 		return nil, err
 	}
 

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 
+	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 )
 
@@ -20,7 +21,7 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 	}
 
 	if found := api.processes[in.Id]; found != nil {
-		found.Kill()
+		_ = utils.KillProcessGroup(found)
 	}
 
 	delete(api.databaseById, process.Id)

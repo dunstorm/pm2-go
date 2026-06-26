@@ -25,7 +25,7 @@ func (api *Handler) ListProcess(ctx context.Context, in *pb.ListProcessRequest) 
 
 	var processes []*pb.Process
 	for _, k := range keys {
-		processes = append(processes, api.databaseById[k])
+		processes = append(processes, cloneProcess(api.databaseById[k]))
 	}
 
 	return &pb.ListProcessResponse{Processes: processes}, nil

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"path"
@@ -69,7 +68,7 @@ func ReadPidFile(pidFileName string) (int32, error) {
 		return 0, err
 	}
 	defer fileIO.Close()
-	rawBytes, err := ioutil.ReadAll(fileIO)
+	rawBytes, err := io.ReadAll(fileIO)
 	if err != nil {
 		return 0, err
 	}
@@ -165,8 +164,24 @@ func GetLogs(filename string, n int) ([]string, error) {
 	if err != nil {
 		return lines, err
 	}
-	file.Seek(-1000, 2)
 	defer file.Close()
+
+	if n <= 0 {
+		return lines, nil
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		return lines, err
+	}
+	offset := info.Size() - 1000
+	if offset < 0 {
+		offset = 0
+	}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return lines, err
+	}
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())

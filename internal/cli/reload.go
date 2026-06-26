@@ -61,7 +61,7 @@ var reloadCmd = &cobra.Command{
 			return
 		}
 
-		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
+		if isJSONFilePath(args[0]) {
 			err = master.StartFileWithOptions(args[0], app.StartFileOptions{
 				Env:           env,
 				EnvName:       envName,

@@ -39,7 +39,7 @@ func newStateTestProcessManager(t *testing.T) pb.ProcessManagerClient {
 
 	t.Cleanup(grpcServer.Stop)
 
-	conn, err := grpc.Dial(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial grpc server: %v", err)
 	}

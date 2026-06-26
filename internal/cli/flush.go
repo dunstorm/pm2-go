@@ -4,8 +4,6 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"os"
-
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/spf13/cobra"
@@ -47,10 +45,9 @@ var flushCmd = &cobra.Command{
 		// check if args[0] is a file
 		// get file extension
 		// if it's a json file, parse it and start the app
-		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
+		if isJSONFilePath(args[0]) {
 			logger.Info().Msg("Flushing:")
-			err = master.FlushFile(args[0], flushProcess)
-			if err != nil {
+			if err := master.FlushFile(args[0], flushProcess); err != nil {
 				logger.Fatal().Msg(err.Error())
 			}
 			return
