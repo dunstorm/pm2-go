@@ -105,6 +105,17 @@ assert_file_not_empty() {
 	[[ "$size" != "0" ]] || fail "expected $file to contain data"
 }
 
+assert_file_not_contains() {
+	local file="$1"
+	local needle="$2"
+
+	[[ -f "$file" ]] || fail "expected file to exist: $file"
+	if grep -Fq "$needle" "$file"; then
+		cat "$file" >&2
+		fail "expected $file not to contain '$needle'"
+	fi
+}
+
 assert_command_fails() {
 	local output
 	local status
@@ -228,6 +239,88 @@ write_autorestart_ecosystem() {
 JSON
 }
 
+write_restart_limit_ecosystem() {
+	cat >"$TMP_HOME/restart-limit.json" <<'JSON'
+[
+  {
+    "name": "restart-limit-test",
+    "args": ["-c", "import time, sys; time.sleep(0.1); sys.exit(2)"],
+    "autorestart": true,
+    "cwd": ".",
+    "executable_path": "python3",
+    "max_restarts": 1,
+    "min_uptime": 1000,
+    "exp_backoff_restart_delay": 100
+  }
+]
+JSON
+}
+
+write_delayed_restart_ecosystem() {
+	cat >"$TMP_HOME/delayed-restart.json" <<'JSON'
+[
+  {
+    "name": "delayed-restart-test",
+    "args": ["-c", "import time, sys; time.sleep(0.1); sys.exit(2)"],
+    "autorestart": true,
+    "cwd": ".",
+    "executable_path": "python3",
+    "restart_delay": 2000
+  }
+]
+JSON
+}
+
+write_memory_restart_ecosystem() {
+	cat >"$TMP_HOME/memory-restart.json" <<'JSON'
+[
+  {
+    "name": "memory-restart-test",
+    "args": ["-c", "import time; data = bytearray(8 * 1024 * 1024); time.sleep(20)"],
+    "autorestart": false,
+    "cwd": ".",
+    "executable_path": "python3",
+    "max_memory_restart": 1048576
+  }
+]
+JSON
+}
+
+write_health_check_ecosystem() {
+	cat >"$TMP_HOME/health-check.json" <<'JSON'
+[
+  {
+    "name": "health-check-test",
+    "args": ["-c", "import time; time.sleep(20)"],
+    "autorestart": false,
+    "cwd": ".",
+    "executable_path": "python3",
+    "health_check_url": "http://127.0.0.1:9/unhealthy",
+    "health_check_interval": 500,
+    "health_check_timeout": 200
+  }
+]
+JSON
+}
+
+write_watch_ecosystem() {
+	mkdir -p "$TMP_HOME/watch-cwd"
+	printf 'initial\n' >"$TMP_HOME/watch-cwd/watched.txt"
+	cat >"$TMP_HOME/watch.json" <<JSON
+[
+  {
+    "name": "watch-test",
+    "args": ["-c", "import time; time.sleep(20)"],
+    "autorestart": false,
+    "cwd": "$TMP_HOME/watch-cwd",
+    "executable_path": "python3",
+    "watch": true,
+    "watch_interval": 500
+  }
+]
+JSON
+}
+
 write_cron_ecosystem() {
 	cat >"$TMP_HOME/cron.json" <<'JSON'
 [
@@ -262,11 +355,15 @@ write_env_ecosystem() {
 [
   {
     "name": "env-test",
-    "args": ["-c", "import os, time; print(os.environ.get('PM2_GO_E2E_ENV')); time.sleep(20)"],
+    "args": ["-c", "import os, time; print(os.environ.get('PM2_GO_E2E_ENV')); print(os.environ.get('PM2_GO_E2E_CALLER_ENV')); print(os.environ.get('PM2_GO_PROFILE_ENV')); time.sleep(20)"],
     "autorestart": false,
     "cwd": ".",
     "env": {
       "PM2_GO_E2E_ENV": "ecosystem-value"
+    },
+    "env_production": {
+      "PM2_GO_E2E_ENV": "production-value",
+      "PM2_GO_PROFILE_ENV": "profile-only"
     },
     "executable_path": "python3"
   }
@@ -297,6 +394,14 @@ log "status before daemon"
 status_output="$(capture_pm2 status)"
 assert_contains "$status_output" "PM2 Daemon Not Running"
 
+log "isolated daemon environment"
+PM2_GO_DAEMON_ONLY=daemon-only run_pm2 -d >/dev/null
+run_pm2 start -- python3 -c 'import os, time; print("daemon-env=" + str(os.environ.get("PM2_GO_DAEMON_ONLY"))); time.sleep(20)' >/dev/null
+isolated_log="$TMP_HOME/.pm2-go/logs/python3-out.log"
+wait_for_file_contains "$isolated_log" "daemon-env=None" 10
+run_pm2 delete all >/dev/null
+run_pm2 kill >/dev/null
+
 log "start ecosystem"
 run_pm2 start examples/ecosystem.json >/dev/null
 sleep 1
@@ -309,6 +414,11 @@ log "status after daemon start"
 status_output="$(capture_pm2 status)"
 assert_contains "$status_output" "PM2 Daemon Running"
 assert_contains "$status_output" "PID:"
+status_json="$(run_pm2 status --json)"
+assert_contains "$status_json" '"running": true'
+ls_json="$(run_pm2 ls --json)"
+assert_contains "$ls_json" '"name": "python-test"'
+assert_contains "$ls_json" '"status": "online"'
 
 log "config set and print"
 config_output="$(capture_pm2 config set logrotate true)"
@@ -322,11 +432,20 @@ assert_contains "$config_output" "log_rotate: true"
 assert_contains "$config_output" "log_rotate_max_files: 3"
 assert_contains "$config_output" "log_rotate_size: 1048576"
 
+log "startup unit generation"
+run_pm2 startup --unit-name pm2-go-e2e --user --output "$TMP_HOME/pm2-go.service" >/dev/null
+wait_for_file_contains "$TMP_HOME/pm2-go.service" "Description=PM2-GO process manager (pm2-go-e2e)" 5
+wait_for_file_contains "$TMP_HOME/pm2-go.service" "Environment=PM2_GO_HOME=$TMP_HOME/.pm2-go" 5
+wait_for_file_contains "$TMP_HOME/pm2-go.service" "WantedBy=default.target" 5
+
 log "describe process"
 describe_output="$(capture_pm2 describe python-test)"
 assert_contains "$describe_output" "Process with id"
 assert_contains "$describe_output" "python-test"
 assert_contains "$describe_output" "cron expression"
+describe_json="$(run_pm2 describe python-test --json)"
+assert_contains "$describe_json" '"name": "python-test"'
+assert_contains "$describe_json" '"cron_restart": "* * * * *"'
 
 log "logs command"
 stdout_log="$TMP_HOME/.pm2-go/logs/python-test-out.log"
@@ -428,6 +547,15 @@ write_env_ecosystem
 run_pm2 start "$TMP_HOME/env.json" >/dev/null
 env_log="$TMP_HOME/.pm2-go/logs/env-test-out.log"
 wait_for_file_contains "$env_log" "ecosystem-value" 10
+run_pm2 flush env-test >/dev/null
+PM2_GO_E2E_ENV=caller-value PM2_GO_E2E_CALLER_ENV=no-update run_pm2 restart "$TMP_HOME/env.json" >/dev/null
+wait_for_file_contains "$env_log" "ecosystem-value" 10
+assert_file_not_contains "$env_log" "no-update"
+run_pm2 flush env-test >/dev/null
+PM2_GO_E2E_ENV=caller-value PM2_GO_E2E_CALLER_ENV=caller-only run_pm2 restart "$TMP_HOME/env.json" --update-env --env production >/dev/null
+wait_for_file_contains "$env_log" "production-value" 10
+wait_for_file_contains "$env_log" "caller-only" 10
+wait_for_file_contains "$env_log" "profile-only" 10
 run_pm2 delete env-test >/dev/null
 
 log "autorestart crashed process"
@@ -437,6 +565,91 @@ wait_for_daemon_log "Restarting process autorestart-test" 15
 autorestart_ls="$(run_pm2 ls)"
 assert_contains "$autorestart_ls" "autorestart-test"
 run_pm2 delete autorestart-test >/dev/null
+
+log "restart limits and backoff"
+write_restart_limit_ecosystem
+run_pm2 start "$TMP_HOME/restart-limit.json" >/dev/null
+wait_for_daemon_log "Scheduling restart for process restart-limit-test" 15
+wait_for_daemon_log "Process restart-limit-test exceeded max_restarts=1" 15
+restart_limit_ls="$(wait_for_ls_contains "restart-limit-test" "errored" 15)"
+assert_contains "$restart_limit_ls" "restart-limit-test"
+run_pm2 delete restart-limit-test >/dev/null
+
+log "manual stop cancels delayed autorestart"
+write_delayed_restart_ecosystem
+run_pm2 start "$TMP_HOME/delayed-restart.json" >/dev/null
+wait_for_daemon_log "Scheduling restart for process delayed-restart-test" 15
+run_pm2 stop delayed-restart-test >/dev/null
+sleep 3
+delayed_restart_ls="$(run_pm2 ls)"
+assert_contains "$delayed_restart_ls" "delayed-restart-test"
+assert_contains "$delayed_restart_ls" "stopped"
+assert_not_contains "$delayed_restart_ls" "online"
+run_pm2 delete delayed-restart-test >/dev/null
+
+log "memory restart"
+write_memory_restart_ecosystem
+run_pm2 start "$TMP_HOME/memory-restart.json" >/dev/null
+memory_old_pid="$(cat "$TMP_HOME/.pm2-go/pids/memory-restart-test.pid")"
+wait_for_daemon_log "Process memory-restart-test exceeded max_memory_restart=1048576 bytes" 15
+memory_new_pid="$(cat "$TMP_HOME/.pm2-go/pids/memory-restart-test.pid")"
+[[ "$memory_new_pid" != "$memory_old_pid" ]] || fail "expected memory restart to replace pid $memory_old_pid"
+wait_for_pid_exit "$memory_old_pid" 20
+memory_restart_ls="$(wait_for_ls_contains "memory-restart-test" "online" 15)"
+assert_contains "$memory_restart_ls" "memory-restart-test"
+run_pm2 delete memory-restart-test >/dev/null
+
+log "health check status"
+write_health_check_ecosystem
+run_pm2 start "$TMP_HOME/health-check.json" >/dev/null
+health_pid="$(cat "$TMP_HOME/.pm2-go/pids/health-check-test.pid")"
+health_ls="$(wait_for_ls_contains "health-check-test" "unhealthy" 15)"
+assert_contains "$health_ls" "health-check-test"
+kill_output="$(capture_pm2 kill)"
+assert_contains "$kill_output" "PM2 Daemon Stopped"
+wait_for_pid_exit "$health_pid" 20
+
+log "watch restart"
+write_watch_ecosystem
+run_pm2 start "$TMP_HOME/watch.json" >/dev/null
+watch_ls="$(wait_for_ls_contains "watch-test" "online" 10)"
+assert_contains "$watch_ls" "watch-test"
+watch_old_pid="$(cat "$TMP_HOME/.pm2-go/pids/watch-test.pid")"
+sleep 2
+printf 'changed\n' >>"$TMP_HOME/watch-cwd/watched.txt"
+wait_for_daemon_log "Watched files changed for process watch-test" 15
+watch_new_pid="$(cat "$TMP_HOME/.pm2-go/pids/watch-test.pid")"
+[[ "$watch_new_pid" != "$watch_old_pid" ]] || fail "expected watch restart to replace pid $watch_old_pid"
+wait_for_pid_exit "$watch_old_pid" 20
+watch_restarted_ls="$(wait_for_ls_contains "watch-test" "online" 15)"
+assert_contains "$watch_restarted_ls" "watch-test"
+run_pm2 delete watch-test >/dev/null
+
+log "graceful reload"
+mkdir -p "$TMP_HOME/reload-cwd"
+cat >"$TMP_HOME/reload-cwd/reload.py" <<'PY'
+import signal
+import sys
+import time
+
+def shutdown(signum, frame):
+    print("graceful-signal", flush=True)
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, shutdown)
+print("reload-ready", flush=True)
+time.sleep(20)
+PY
+(cd "$TMP_HOME/reload-cwd" && HOME="$TMP_HOME" "$BIN" start -- python3 reload.py >/dev/null)
+reload_log="$TMP_HOME/.pm2-go/logs/python3-out.log"
+wait_for_file_contains "$reload_log" "reload-ready" 10
+reload_output="$(run_pm2 reload python3 --kill-timeout 2000)"
+assert_contains "$reload_output" "python3"
+assert_contains "$reload_output" "online"
+wait_for_file_contains "$reload_log" "graceful-signal" 10
+reload_ls="$(run_pm2 ls)"
+assert_parent_is_daemon "$reload_ls" "python3"
+run_pm2 delete python3 >/dev/null
 
 log "direct command"
 mkdir -p "$TMP_HOME/direct-cwd"
@@ -454,6 +667,9 @@ assert_line_count "$direct_ls" "python3" 1
 assert_parent_is_daemon "$direct_ls" "python3"
 direct_log="$TMP_HOME/.pm2-go/logs/python3-out.log"
 wait_for_file_contains "$direct_log" "direct-value" 10
+wait_for_file_contains "$direct_log" "$TMP_HOME/direct-cwd" 10
+PM2_GO_DIRECT_ENV=updated-value run_pm2 restart python3 --update-env >/dev/null
+wait_for_file_contains "$direct_log" "updated-value" 10
 wait_for_file_contains "$direct_log" "$TMP_HOME/direct-cwd" 10
 
 log "delete direct command"

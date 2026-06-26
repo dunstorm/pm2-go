@@ -6,6 +6,8 @@ package cli
 import (
 	"os"
 
+	"github.com/dunstorm/pm2-go/internal/app"
+	"github.com/dunstorm/pm2-go/internal/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,18 @@ var restartCmd = &cobra.Command{
 		}
 
 		logger := master.GetLogger()
+		updateEnv, err := cmd.Flags().GetBool("update-env")
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
+		envName, err := cmd.Flags().GetString("env")
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
+		var env map[string]string
+		if updateEnv {
+			env = utils.EnvironmentMap(os.Environ())
+		}
 
 		if args[0] == "all" {
 			db := master.ListProcess()
@@ -30,7 +44,7 @@ var restartCmd = &cobra.Command{
 			}
 			for _, process := range db {
 				master.GetLogger().Info().Msgf("Applying action restartProcessId on app [%d](pid: [ %d ])", process.Id, process.Pid)
-				master.RestartProcess(process)
+				master.RestartProcessWithEnv(process, env)
 			}
 			renderProcessList()
 			return
@@ -40,7 +54,11 @@ var restartCmd = &cobra.Command{
 		// get file extension
 		// if it's a json file, parse it and start the app
 		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
-			err = master.StartFile(args[0])
+			err = master.StartFileWithOptions(args[0], app.StartFileOptions{
+				Env:           env,
+				EnvName:       envName,
+				UseCurrentEnv: updateEnv,
+			})
 			if err == nil {
 				renderProcessList()
 			} else {
@@ -52,7 +70,7 @@ var restartCmd = &cobra.Command{
 		// if you can find the app in the database, start it
 		process := master.FindProcess(args[0])
 		if process != nil && process.Name != "" {
-			master.RestartProcess(process)
+			master.RestartProcessWithEnv(process, env)
 			renderProcessList()
 			return
 		} else {
@@ -73,4 +91,6 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// restartCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	restartCmd.Flags().Bool("update-env", false, "Update process environment from the current shell before restarting")
+	restartCmd.Flags().String("env", "", "Use env_<name> values from an ecosystem file")
 }

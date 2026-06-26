@@ -35,14 +35,25 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 
 	// shared: spawn new process
 	process, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
-		Name:           in.Name,
-		Args:           in.Args,
-		ExecutablePath: in.ExecutablePath,
-		AutoRestart:    in.AutoRestart,
-		Logger:         api.logger,
-		Cwd:            in.Cwd,
-		CronRestart:    in.CronRestart,
-		Env:            in.Env,
+		Name:                     in.Name,
+		Args:                     in.Args,
+		ExecutablePath:           in.ExecutablePath,
+		AutoRestart:              in.AutoRestart,
+		Logger:                   api.logger,
+		Cwd:                      in.Cwd,
+		CronRestart:              in.CronRestart,
+		Env:                      in.Env,
+		MaxRestarts:              in.MaxRestarts,
+		MinUptimeMS:              in.MinUptimeMs,
+		RestartDelayMS:           in.RestartDelayMs,
+		ExpBackoffRestartDelayMS: in.ExpBackoffRestartDelayMs,
+		MaxMemoryRestart:         in.MaxMemoryRestart,
+		HealthCheckURL:           in.HealthCheckUrl,
+		HealthCheckIntervalMS:    in.HealthCheckIntervalMs,
+		HealthCheckTimeoutMS:     in.HealthCheckTimeoutMs,
+		Watch:                    in.Watch,
+		WatchPaths:               in.WatchPaths,
+		WatchIntervalMS:          in.WatchIntervalMs,
 	})
 
 	if err != nil {

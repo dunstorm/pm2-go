@@ -53,3 +53,26 @@ func TestGetMainDirectoryUsesPM2GoHome(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeStringMaps(t *testing.T) {
+	merged := MergeStringMaps(
+		map[string]string{
+			"KEEP":     "base",
+			"OVERRIDE": "base",
+		},
+		map[string]string{
+			"OVERRIDE": "override",
+			"ADD":      "override",
+		},
+	)
+
+	if merged["KEEP"] != "base" {
+		t.Fatalf("expected KEEP from base, got %q", merged["KEEP"])
+	}
+	if merged["OVERRIDE"] != "override" {
+		t.Fatalf("expected OVERRIDE from override, got %q", merged["OVERRIDE"])
+	}
+	if merged["ADD"] != "override" {
+		t.Fatalf("expected ADD from override, got %q", merged["ADD"])
+	}
+}

@@ -3,19 +3,70 @@ package app
 import (
 	"encoding/json"
 	"os"
+	"strings"
 
+	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 )
 
 type Data struct {
-	Name           string            `json:"name"`
-	Args           []string          `json:"args"`
-	ExecutablePath string            `json:"executable_path"`
-	AutoRestart    bool              `json:"autorestart"`
-	Cwd            string            `json:"cwd"`
-	Env            map[string]string `json:"env"`
-	Scripts        []string          `json:"scripts"`
-	CronRestart    string            `json:"cron_restart"`
+	Name                     string                       `json:"name"`
+	Args                     []string                     `json:"args"`
+	ExecutablePath           string                       `json:"executable_path"`
+	AutoRestart              bool                         `json:"autorestart"`
+	Cwd                      string                       `json:"cwd"`
+	Env                      map[string]string            `json:"env"`
+	Scripts                  []string                     `json:"scripts"`
+	CronRestart              string                       `json:"cron_restart"`
+	MaxRestarts              int32                        `json:"max_restarts"`
+	MinUptimeMS              int32                        `json:"min_uptime"`
+	RestartDelayMS           int32                        `json:"restart_delay"`
+	ExpBackoffRestartDelayMS int32                        `json:"exp_backoff_restart_delay"`
+	MaxMemoryRestart         int64                        `json:"max_memory_restart"`
+	HealthCheckURL           string                       `json:"health_check_url"`
+	HealthCheckIntervalMS    int32                        `json:"health_check_interval"`
+	HealthCheckTimeoutMS     int32                        `json:"health_check_timeout"`
+	Watch                    bool                         `json:"watch"`
+	WatchPaths               []string                     `json:"watch_paths"`
+	WatchIntervalMS          int32                        `json:"watch_interval"`
+	EnvProfiles              map[string]map[string]string `json:"-"`
+}
+
+func (data *Data) UnmarshalJSON(content []byte) error {
+	type dataAlias Data
+	var decoded dataAlias
+	if err := json.Unmarshal(content, &decoded); err != nil {
+		return err
+	}
+	*data = Data(decoded)
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(content, &raw); err != nil {
+		return err
+	}
+	for key, value := range raw {
+		if !strings.HasPrefix(key, "env_") {
+			continue
+		}
+		var env map[string]string
+		if err := json.Unmarshal(value, &env); err != nil {
+			return err
+		}
+		if data.EnvProfiles == nil {
+			data.EnvProfiles = make(map[string]map[string]string)
+		}
+		data.EnvProfiles[strings.TrimPrefix(key, "env_")] = env
+	}
+	return nil
+}
+
+type StartFileOptions struct {
+	Env           map[string]string
+	EnvName       string
+	UseCurrentEnv bool
+	Graceful      bool
+	Signal        string
+	KillTimeoutMS int32
 }
 
 func readFileJson(filePath string) ([]Data, error) {
@@ -34,6 +85,10 @@ func readFileJson(filePath string) ([]Data, error) {
 }
 
 func (app *App) StartFile(filePath string) error {
+	return app.StartFileWithOptions(filePath, StartFileOptions{UseCurrentEnv: true})
+}
+
+func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) error {
 	payload, err := readFileJson(filePath)
 	if err != nil {
 		return err
@@ -41,24 +96,55 @@ func (app *App) StartFile(filePath string) error {
 
 	for _, p := range payload {
 		process := app.FindProcess(p.Name)
+		baseEnv := options.Env
+		if baseEnv == nil {
+			if process != nil && !options.UseCurrentEnv {
+				baseEnv = process.Env
+			} else {
+				baseEnv = utils.EnvironmentMap(os.Environ())
+			}
+		}
+		env := utils.MergeStringMaps(baseEnv, p.Env)
+		if options.EnvName != "" {
+			env = utils.MergeStringMaps(env, p.EnvProfiles[options.EnvName])
+		}
 		if process == nil {
 			app.SpawnProcess(SpawnParams{
-				Name:           p.Name,
-				Args:           p.Args,
-				ExecutablePath: p.ExecutablePath,
-				AutoRestart:    p.AutoRestart,
-				Cwd:            p.Cwd,
-				CronRestart:    p.CronRestart,
-				Env:            p.Env,
+				Name:                     p.Name,
+				Args:                     p.Args,
+				ExecutablePath:           p.ExecutablePath,
+				AutoRestart:              p.AutoRestart,
+				Cwd:                      p.Cwd,
+				CronRestart:              p.CronRestart,
+				Env:                      env,
+				MaxRestarts:              p.MaxRestarts,
+				MinUptimeMS:              p.MinUptimeMS,
+				RestartDelayMS:           p.RestartDelayMS,
+				ExpBackoffRestartDelayMS: p.ExpBackoffRestartDelayMS,
+				MaxMemoryRestart:         p.MaxMemoryRestart,
+				HealthCheckURL:           p.HealthCheckURL,
+				HealthCheckIntervalMS:    p.HealthCheckIntervalMS,
+				HealthCheckTimeoutMS:     p.HealthCheckTimeoutMS,
+				Watch:                    p.Watch,
+				WatchPaths:               p.WatchPaths,
+				WatchIntervalMS:          p.WatchIntervalMS,
 			})
 		} else {
-			restartProcess := processFromData(process.Id, p)
-			if process.ProcStatus.Status == "online" {
+			restartProcess := processFromData(process.Id, p, env)
+			if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
-				app.RestartProcess(restartProcess)
+				app.RestartProcessWithOptions(restartProcess, RestartOptions{
+					Graceful:      options.Graceful,
+					Signal:        options.Signal,
+					KillTimeoutMS: options.KillTimeoutMS,
+				})
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
-				app.RestartProcess(restartProcess)
+				app.RestartProcessWithOptions(restartProcess, RestartOptions{
+					Graceful:      options.Graceful,
+					Signal:        options.Signal,
+					KillTimeoutMS: options.KillTimeoutMS,
+				})
 			}
 		}
 	}
@@ -76,7 +162,7 @@ func (app *App) StopFile(filePath string) error {
 		if process == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
-			if process.ProcStatus.Status == "online" {
+			if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 				app.logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 				app.StopProcess(process.Id)
 			} else {
@@ -98,7 +184,7 @@ func (app *App) DeleteFile(filePath string) error {
 		if process == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
-			if process.ProcStatus.Status == "online" {
+			if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 				app.logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 				app.StopProcess(process.Id)
 			}
@@ -133,45 +219,82 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 		process := app.FindProcess(p.Name)
 		if process == nil || process.ProcStatus == nil {
 			app.SpawnProcess(SpawnParams{
-				Name:           p.Name,
-				Args:           p.Args,
-				ExecutablePath: p.ExecutablePath,
-				AutoRestart:    p.AutoRestart,
-				Cwd:            p.Cwd,
-				CronRestart:    p.CronRestart,
-				Env:            p.Env,
+				Name:                     p.Name,
+				Args:                     p.Args,
+				ExecutablePath:           p.ExecutablePath,
+				AutoRestart:              p.AutoRestart,
+				Cwd:                      p.Cwd,
+				CronRestart:              p.CronRestart,
+				Env:                      p.Env,
+				MaxRestarts:              p.MaxRestarts,
+				MinUptimeMS:              p.MinUptimeMs,
+				RestartDelayMS:           p.RestartDelayMs,
+				ExpBackoffRestartDelayMS: p.ExpBackoffRestartDelayMs,
+				MaxMemoryRestart:         p.MaxMemoryRestart,
+				HealthCheckURL:           p.HealthCheckUrl,
+				HealthCheckIntervalMS:    p.HealthCheckIntervalMs,
+				HealthCheckTimeoutMS:     p.HealthCheckTimeoutMs,
+				Watch:                    p.Watch,
+				WatchPaths:               p.WatchPaths,
+				WatchIntervalMS:          p.WatchIntervalMs,
 			})
 		} else {
-			if process.ProcStatus.Status == "online" {
+			if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
 			}
 			p.Id = process.Id
 			app.RestartProcess(&pb.Process{
-				Id:             p.Id,
-				Name:           p.Name,
-				Args:           p.Args,
-				ExecutablePath: p.ExecutablePath,
-				AutoRestart:    p.AutoRestart,
-				Cwd:            p.Cwd,
-				CronRestart:    p.CronRestart,
-				Env:            p.Env,
+				Id:                       p.Id,
+				Name:                     p.Name,
+				Args:                     p.Args,
+				ExecutablePath:           p.ExecutablePath,
+				AutoRestart:              p.AutoRestart,
+				Cwd:                      p.Cwd,
+				CronRestart:              p.CronRestart,
+				Env:                      p.Env,
+				MaxRestarts:              p.MaxRestarts,
+				MinUptimeMs:              p.MinUptimeMs,
+				RestartDelayMs:           p.RestartDelayMs,
+				ExpBackoffRestartDelayMs: p.ExpBackoffRestartDelayMs,
+				MaxMemoryRestart:         p.MaxMemoryRestart,
+				HealthCheckUrl:           p.HealthCheckUrl,
+				HealthCheckIntervalMs:    p.HealthCheckIntervalMs,
+				HealthCheckTimeoutMs:     p.HealthCheckTimeoutMs,
+				Watch:                    p.Watch,
+				WatchPaths:               p.WatchPaths,
+				WatchIntervalMs:          p.WatchIntervalMs,
 			})
 		}
 	}
 }
 
-func processFromData(id int32, data Data) *pb.Process {
+func isRunningStatus(status string) bool {
+	return status == "online" || status == "unhealthy"
+}
+
+func processFromData(id int32, data Data, env map[string]string) *pb.Process {
 	return &pb.Process{
-		Id:             id,
-		Name:           data.Name,
-		Args:           data.Args,
-		ExecutablePath: data.ExecutablePath,
-		AutoRestart:    data.AutoRestart,
-		Cwd:            data.Cwd,
-		CronRestart:    data.CronRestart,
-		Env:            data.Env,
+		Id:                       id,
+		Name:                     data.Name,
+		Args:                     data.Args,
+		ExecutablePath:           data.ExecutablePath,
+		AutoRestart:              data.AutoRestart,
+		Cwd:                      data.Cwd,
+		CronRestart:              data.CronRestart,
+		Env:                      env,
+		MaxRestarts:              data.MaxRestarts,
+		MinUptimeMs:              data.MinUptimeMS,
+		RestartDelayMs:           data.RestartDelayMS,
+		ExpBackoffRestartDelayMs: data.ExpBackoffRestartDelayMS,
+		MaxMemoryRestart:         data.MaxMemoryRestart,
+		HealthCheckUrl:           data.HealthCheckURL,
+		HealthCheckIntervalMs:    data.HealthCheckIntervalMS,
+		HealthCheckTimeoutMs:     data.HealthCheckTimeoutMS,
+		Watch:                    data.Watch,
+		WatchPaths:               data.WatchPaths,
+		WatchIntervalMs:          data.WatchIntervalMS,
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func updateProcessMap(handler *Handler, processId int32, p *os.Process) {
@@ -18,15 +19,28 @@ func updateProcessMap(handler *Handler, processId int32, p *os.Process) {
 func restartProcess(handler *Handler, p *pb.Process) {
 	handler.logger.Info().Msgf("Restarting process %s", p.Name)
 	p.IncreaseRestarts()
+	p.RestartAt = nil
+	p.SetStopSignal(false)
 	newProcess, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
-		Name:           p.Name,
-		Args:           p.Args,
-		ExecutablePath: p.ExecutablePath,
-		AutoRestart:    p.AutoRestart,
-		Cwd:            p.Cwd,
-		Logger:         handler.logger,
-		CronRestart:    p.CronRestart,
-		Env:            p.Env,
+		Name:                     p.Name,
+		Args:                     p.Args,
+		ExecutablePath:           p.ExecutablePath,
+		AutoRestart:              p.AutoRestart,
+		Cwd:                      p.Cwd,
+		Logger:                   handler.logger,
+		CronRestart:              p.CronRestart,
+		Env:                      p.Env,
+		MaxRestarts:              p.MaxRestarts,
+		MinUptimeMS:              p.MinUptimeMs,
+		RestartDelayMS:           p.RestartDelayMs,
+		ExpBackoffRestartDelayMS: p.ExpBackoffRestartDelayMs,
+		MaxMemoryRestart:         p.MaxMemoryRestart,
+		HealthCheckURL:           p.HealthCheckUrl,
+		HealthCheckIntervalMS:    p.HealthCheckIntervalMs,
+		HealthCheckTimeoutMS:     p.HealthCheckTimeoutMs,
+		Watch:                    p.Watch,
+		WatchPaths:               p.WatchPaths,
+		WatchIntervalMS:          p.WatchIntervalMs,
 	})
 	if err != nil {
 		p.AutoRestart = false
@@ -53,16 +67,88 @@ func restartProcess(handler *Handler, p *pb.Process) {
 	go process.Wait()
 }
 
+func restartLiveProcess(handler *Handler, p *pb.Process) {
+	found := handler.processes[p.Id]
+	if found == nil && p.Pid != 0 {
+		if process, running := utils.GetProcess(p.Pid); running {
+			found = process
+		}
+	}
+	if found != nil {
+		if err := found.Kill(); err != nil {
+			handler.logger.Warn().Err(err).Msgf("Failed to stop process %s before restart", p.Name)
+		}
+	}
+
+	p.SetStatus("stopped")
+	p.ResetCPUMemory()
+	p.SetStopSignal(true)
+	p.ResetPid()
+	updateProcessMap(handler, p.Id, nil)
+
+	restartProcess(handler, p)
+}
+
+func nextAutoRestartDelay(p *pb.Process) time.Duration {
+	if p.ExpBackoffRestartDelayMs > 0 {
+		if p.CurrentRestartDelayMs <= 0 {
+			p.CurrentRestartDelayMs = p.ExpBackoffRestartDelayMs
+		} else {
+			p.CurrentRestartDelayMs *= 2
+		}
+		return time.Duration(p.CurrentRestartDelayMs) * time.Millisecond
+	}
+	if p.RestartDelayMs > 0 {
+		return time.Duration(p.RestartDelayMs) * time.Millisecond
+	}
+	return 0
+}
+
+func scheduleAutoRestart(handler *Handler, p *pb.Process, delay time.Duration) {
+	p.RestartAt = timestamppb.New(time.Now().Add(delay))
+	handler.logger.Info().Msgf("Scheduling restart for process %s in %s", p.Name, delay)
+}
+
+func handleAutoRestart(handler *Handler, p *pb.Process, uptime time.Duration) {
+	if !p.AutoRestart || p.GetStopSignal() {
+		return
+	}
+
+	if p.MinUptimeMs > 0 && uptime < time.Duration(p.MinUptimeMs)*time.Millisecond {
+		p.UnstableRestarts++
+	} else {
+		p.UnstableRestarts = 0
+		p.CurrentRestartDelayMs = 0
+	}
+
+	if p.MaxRestarts > 0 && p.UnstableRestarts > p.MaxRestarts {
+		p.SetStopSignal(true)
+		p.UpdateStatus("errored")
+		handler.logger.Error().Msgf("Process %s exceeded max_restarts=%d", p.Name, p.MaxRestarts)
+		return
+	}
+
+	delay := nextAutoRestartDelay(p)
+	if delay > 0 {
+		scheduleAutoRestart(handler, p, delay)
+		return
+	}
+	restartProcess(handler, p)
+}
+
 func startScheduler(handler *Handler) {
 	var wg sync.WaitGroup
 
 	// sync process
 	syncProcess := func(p *pb.Process) {
-		if p.ProcStatus.Status == "online" {
+		defer wg.Done()
+
+		if isRunningState(p.ProcStatus.Status) {
 			if _, ok := utils.IsProcessRunning(p.Pid); !ok {
 				handler.mu.Lock()
 				defer handler.mu.Unlock()
 
+				uptime := time.Since(p.ProcStatus.StartedAt.AsTime())
 				p.UpdateUptime()
 				p.ResetPid()
 				p.UpdateStatus("stopped")
@@ -70,13 +156,47 @@ func startScheduler(handler *Handler) {
 				updateProcessMap(handler, p.Id, nil)
 
 				// restart process if auto restart is enabled and process is not stopped
-				if p.AutoRestart && !p.GetStopSignal() {
-					restartProcess(handler, p)
-				}
+				handleAutoRestart(handler, p, uptime)
 				handler.persistStateLocked()
 			} else {
 				p.UpdateUptime()
+				if p.MaxMemoryRestart > 0 {
+					memory, err := p.UpdateCPUMemoryStats()
+					if err == nil && memory > p.MaxMemoryRestart {
+						handler.mu.Lock()
+						defer handler.mu.Unlock()
+
+						handler.logger.Warn().Msgf("Process %s exceeded max_memory_restart=%d bytes", p.Name, p.MaxMemoryRestart)
+						restartLiveProcess(handler, p)
+						handler.persistStateLocked()
+						return
+					}
+				}
+				if handleHealthCheck(handler, p) {
+					handler.mu.Lock()
+					handler.persistStateLocked()
+					handler.mu.Unlock()
+				}
+				if handleWatch(handler, p) {
+					handler.mu.Lock()
+					restartLiveProcess(handler, p)
+					handler.persistStateLocked()
+					handler.mu.Unlock()
+					return
+				}
 			}
+		} else if p.RestartAt != nil && p.RestartAt.AsTime().Before(time.Now()) {
+			handler.mu.Lock()
+			defer handler.mu.Unlock()
+
+			if p.GetStopSignal() {
+				p.RestartAt = nil
+				handler.persistStateLocked()
+				return
+			}
+			p.RestartAt = nil
+			restartProcess(handler, p)
+			handler.persistStateLocked()
 		} else if p.NextStartAt != nil && p.NextStartAt.AsTime().Before(time.Now()) {
 			handler.mu.Lock()
 			defer handler.mu.Unlock()
@@ -86,7 +206,6 @@ func startScheduler(handler *Handler) {
 			p.UpdateNextStartAt()
 			handler.persistStateLocked()
 		}
-		wg.Done()
 	}
 
 	// read config

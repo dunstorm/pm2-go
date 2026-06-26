@@ -19,10 +19,15 @@ PM2. Linux and macOS are supported; Windows is not currently supported.
 - Stop, restart, delete, and flush logs by name, id, JSON file, or `all`
 - Tail stdout and stderr logs
 - Auto-restart crashed processes
+- Limit crash-loop restarts with `max_restarts`, `min_uptime`, and restart delays
+- Restart processes that exceed `max_memory_restart`
+- Mark processes unhealthy from HTTP health checks
+- Restart watched processes when configured files change
 - Restart processes on cron schedules
 - Restore online processes automatically when the daemon starts
 - Dump and restore process lists
 - Rotate logs by size and file count
+- Generate systemd units for daemon startup
 
 ## Requirements
 
@@ -87,6 +92,9 @@ array or an object with an `apps` array.
     "env": {
       "APP_ENV": "production"
     },
+    "env_staging": {
+      "APP_ENV": "staging"
+    },
     "executable_path": "python3",
     "cron_restart": "* * * * *"
   }
@@ -97,6 +105,7 @@ Run it with:
 
 ```sh
 pm2-go start examples/ecosystem.json
+pm2-go start examples/ecosystem.json --env staging
 pm2-go restart examples/ecosystem.json
 pm2-go stop examples/ecosystem.json
 pm2-go delete examples/ecosystem.json
@@ -111,31 +120,57 @@ Supported fields:
 | `args` | Arguments passed to the executable. |
 | `cwd` | Working directory for the process. |
 | `env` | Environment variables added to the spawned process. |
+| `env_<name>` | Environment profile selected with `--env <name>`; profile values override `env`. |
 | `autorestart` | Restart the process when it exits unexpectedly. |
 | `cron_restart` | Five-field cron expression for scheduled restarts. |
+| `max_restarts` | Maximum unstable restarts before the process is marked `errored`. |
+| `min_uptime` | Minimum stable runtime in milliseconds before crash counters reset. |
+| `restart_delay` | Fixed autorestart delay in milliseconds. |
+| `exp_backoff_restart_delay` | Initial autorestart delay in milliseconds, doubled after each unstable crash. |
+| `max_memory_restart` | RSS limit in bytes before PM2-GO restarts the process. |
+| `health_check_url` | Optional HTTP endpoint checked while the process is running. |
+| `health_check_interval` | Health check interval in milliseconds. |
+| `health_check_timeout` | Health check timeout in milliseconds. |
+| `watch` | Restart the process when watched paths change. |
+| `watch_paths` | Files or directories to poll when `watch` is enabled. |
+| `watch_interval` | Watch polling interval in milliseconds. |
 
-Environment values are stored with process metadata for restart, dump, and
-daemon restore flows. Keep `$HOME/.pm2-go` private if you store sensitive
-values there.
+PM2-GO stores a complete environment with process metadata for restart, dump,
+and daemon restore flows. Direct commands use the shell environment from
+`pm2-go start`. JSON ecosystem files use the shell environment as a base and
+let the file's `env` values override matching keys. Keep `$HOME/.pm2-go`
+private if you store sensitive values there.
+
+To update a running process with the current shell environment, restart with
+`--update-env`:
+
+```sh
+APP_ENV=production pm2-go restart api --update-env
+```
+
+For JSON ecosystem files, `--update-env` refreshes that shell environment base
+and still lets the file's `env` values override matching keys.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
 | `pm2-go start <cmd> [args...]` | Start a direct command. |
-| `pm2-go start <file.json>` | Start or restart processes from an ecosystem file. |
+| `pm2-go start [--env name] <file.json>` | Start or restart processes from an ecosystem file. |
 | `pm2-go start all` | Start all known processes. |
-| `pm2-go ls` | List managed processes. |
-| `pm2-go describe <name\|id>` | Show process details and log paths. |
+| `pm2-go ls [--json]` | List managed processes. |
+| `pm2-go describe [--json] <name\|id>` | Show process details and log paths. |
 | `pm2-go logs [-l lines] <name\|id>` | Tail stdout and stderr logs. |
 | `pm2-go stop <name\|id\|file.json\|all>` | Stop processes without removing them from the process list. |
-| `pm2-go restart <name\|id\|file.json\|all>` | Restart processes. |
+| `pm2-go restart [--env name] [--update-env] <name\|id\|file.json\|all>` | Restart processes. |
+| `pm2-go reload [--env name] [--signal SIGTERM] [--kill-timeout 1600] [--update-env] <name\|id\|file.json\|all>` | Gracefully reload processes before force-kill fallback. |
 | `pm2-go delete <name\|id\|file.json\|all>` | Stop and remove processes from the process list. |
 | `pm2-go flush [name\|id\|file.json\|all]` | Truncate process log files. |
 | `pm2-go dump [name]` | Save the current process list to `$HOME/.pm2-go/<name>.json`. |
 | `pm2-go restore [name]` | Restore a dumped process list. |
 | `pm2-go config` | Print local PM2-GO config. |
-| `pm2-go status` | Show daemon status. |
+| `pm2-go status [--json]` | Show daemon status. |
+| `pm2-go startup [--user] [--output pm2-go.service]` | Generate a systemd unit for daemon startup. |
 | `pm2-go kill` | Stop the daemon and managed processes. |
 
 ## Daemon and Files
@@ -176,6 +211,45 @@ pm2-go config set logrotate_max_files 10
 
 Defaults are `logrotate=false`, `logrotate_size=10M`, and
 `logrotate_max_files=10`.
+
+## Benchmarking
+
+PM2-GO includes a small benchmark harness that compares PM2 and PM2-GO CLI
+lifecycle latency. It measures command elapsed time for cold start, list,
+restart, stop, start, and delete flows with managed Python processes.
+
+Run it in Docker, which installs PM2 without changing the host:
+
+```sh
+make benchmark/docker
+```
+
+If `pm2` is already installed locally, run it directly:
+
+```sh
+make benchmark
+```
+
+The benchmark accepts custom sample counts and process counts:
+
+```sh
+./scripts/benchmark_pm2_vs_pm2_go.py --iterations 10 --process-counts 1,10,50
+```
+
+Example median results from the Docker benchmark on Linux arm64 with 5
+iterations:
+
+| Processes | Scenario | PM2 | PM2-GO | Result |
+| --- | --- | ---: | ---: | --- |
+| 1 | cold start | 293.4ms | 17.2ms | PM2-GO 17.07x faster |
+| 1 | list | 79.1ms | 2.7ms | PM2-GO 29.53x faster |
+| 1 | restart all | 185.8ms | 4.2ms | PM2-GO 43.92x faster |
+| 10 | cold start | 322.0ms | 51.8ms | PM2-GO 6.22x faster |
+| 10 | list | 70.5ms | 8.8ms | PM2-GO 7.98x faster |
+| 10 | restart all | 646.3ms | 31.3ms | PM2-GO 20.64x faster |
+
+These numbers measure CLI lifecycle overhead only. They do not measure app
+throughput, long-running daemon memory use, or behavior under production load.
 
 ## Development
 

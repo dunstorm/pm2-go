@@ -45,6 +45,23 @@ message Process {
     bool stop_signal = 15;
     int32 log_file_count = 16;
     map<string, string> env = 17;
+    int32 max_restarts = 18;
+    int32 min_uptime_ms = 19;
+    int32 restart_delay_ms = 20;
+    int32 exp_backoff_restart_delay_ms = 21;
+    int64 max_memory_restart = 22;
+    int32 unstable_restarts = 23;
+    int32 current_restart_delay_ms = 24;
+    google.protobuf.Timestamp restart_at = 25;
+    string health_check_url = 26;
+    int32 health_check_interval_ms = 27;
+    int32 health_check_timeout_ms = 28;
+    google.protobuf.Timestamp last_health_check_at = 29;
+    bool watch = 30;
+    repeated string watch_paths = 31;
+    int32 watch_interval_ms = 32;
+    map<string, int64> watch_signatures = 33;
+    google.protobuf.Timestamp last_watch_check_at = 34;
 }
 
 message FindProcessRequest {
@@ -83,6 +100,17 @@ message SpawnProcessRequest {
     string cwd = 7;
     string cron_restart = 11;
     map<string, string> env = 12;
+    int32 max_restarts = 13;
+    int32 min_uptime_ms = 14;
+    int32 restart_delay_ms = 15;
+    int32 exp_backoff_restart_delay_ms = 16;
+    int64 max_memory_restart = 17;
+    string health_check_url = 18;
+    int32 health_check_interval_ms = 19;
+    int32 health_check_timeout_ms = 20;
+    bool watch = 21;
+    repeated string watch_paths = 22;
+    int32 watch_interval_ms = 23;
 }
 
 message SpawnProcessResponse {
@@ -99,4 +127,18 @@ message RestartProcessRequest {
     string cwd = 8;
     string cron_restart = 12;
     map<string, string> env = 13;
+    bool graceful = 14;
+    string signal = 15;
+    int32 kill_timeout_ms = 16;
+    int32 max_restarts = 17;
+    int32 min_uptime_ms = 18;
+    int32 restart_delay_ms = 19;
+    int32 exp_backoff_restart_delay_ms = 20;
+    int64 max_memory_restart = 21;
+    string health_check_url = 22;
+    int32 health_check_interval_ms = 23;
+    int32 health_check_timeout_ms = 24;
+    bool watch = 25;
+    repeated string watch_paths = 26;
+    int32 watch_interval_ms = 27;
 }

@@ -50,6 +50,15 @@ func renderProcessList() {
 	t.Render()
 }
 
+func renderProcessListJSON() {
+	processes := master.ListProcess()
+	views := make([]processView, 0, len(processes))
+	for _, process := range processes {
+		views = append(views, newProcessView(process))
+	}
+	writeJSON(views)
+}
+
 // lsCmd represents the ls command
 var lsCmd = &cobra.Command{
 	Use:   "ls",
@@ -57,6 +66,14 @@ var lsCmd = &cobra.Command{
 	Long:  "List all processes",
 	Run: func(cmd *cobra.Command, args []string) {
 		master.SpawnDaemon()
+		jsonOutput, err := cmd.Flags().GetBool("json")
+		if err != nil {
+			master.GetLogger().Fatal().Msg(err.Error())
+		}
+		if jsonOutput {
+			renderProcessListJSON()
+			return
+		}
 		renderProcessList()
 	},
 }
@@ -73,4 +90,5 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// lsCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	lsCmd.Flags().Bool("json", false, "Print process list as JSON")
 }

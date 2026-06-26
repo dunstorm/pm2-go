@@ -1,7 +1,8 @@
 DOCKER ?= docker
 E2E_IMAGE ?= pm2-go-e2e
+BENCHMARK_IMAGE ?= pm2-go-benchmark
 
-.PHONY: protoc build install daemon test/quick/start test/quick/stop ls kill logs test test/e2e test/e2e/slow test/e2e/docker test/e2e/docker/slow dump restore flush
+.PHONY: protoc build install daemon test/quick/start test/quick/stop ls kill logs test test/e2e test/e2e/slow test/e2e/docker test/e2e/docker/slow benchmark benchmark/docker dump restore flush
 
 protoc:
 	@echo "Generating Go files"
@@ -63,6 +64,18 @@ test/e2e/docker/slow:
 		-v pm2-go-go-build-cache:/root/.cache/go-build \
 		-w /workspace \
 		$(E2E_IMAGE) ./scripts/e2e.sh
+
+benchmark:
+	./scripts/benchmark_pm2_vs_pm2_go.py
+
+benchmark/docker:
+	$(DOCKER) build -f docker/benchmark.Dockerfile -t $(BENCHMARK_IMAGE) .
+	$(DOCKER) run --rm \
+		-v "$(CURDIR)":/workspace \
+		-v pm2-go-go-mod-cache:/go/pkg/mod \
+		-v pm2-go-go-build-cache:/root/.cache/go-build \
+		-w /workspace \
+		$(BENCHMARK_IMAGE) ./scripts/benchmark_pm2_vs_pm2_go.py
 
 dump:
 	./bin/pm2-go dump

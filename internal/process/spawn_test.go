@@ -129,3 +129,24 @@ func TestCommandEnvironmentAppliesOverrides(t *testing.T) {
 		t.Fatalf("expected explicit PYTHONUNBUFFERED override, got %q", env["PYTHONUNBUFFERED"])
 	}
 }
+
+func TestCommandEnvironmentUsesExplicitEnvironment(t *testing.T) {
+	environ := commandEnvironment(
+		[]string{"PATH=/bin", "DAEMON_ONLY=leak"},
+		map[string]string{
+			"APP_ENV": "exact",
+		},
+		false,
+	)
+	env := utils.EnvironmentMap(environ)
+
+	if env["APP_ENV"] != "exact" {
+		t.Fatalf("expected APP_ENV exact, got %q", env["APP_ENV"])
+	}
+	if _, exists := env["DAEMON_ONLY"]; exists {
+		t.Fatalf("expected daemon environment to be isolated, got %#v", env)
+	}
+	if _, exists := env["PATH"]; exists {
+		t.Fatalf("expected base environment to be replaced, got %#v", env)
+	}
+}

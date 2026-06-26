@@ -15,14 +15,25 @@ import (
 )
 
 type SpawnParams struct {
-	Name           string            `json:"name"`
-	ExecutablePath string            `json:"executablePath"`
-	Args           []string          `json:"args"`
-	Cwd            string            `json:"cwd"`
-	Env            map[string]string `json:"env"`
-	AutoRestart    bool              `json:"autorestart"`
-	CronRestart    string            `json:"cron_restart"`
-	Logger         *zerolog.Logger
+	Name                     string            `json:"name"`
+	ExecutablePath           string            `json:"executablePath"`
+	Args                     []string          `json:"args"`
+	Cwd                      string            `json:"cwd"`
+	Env                      map[string]string `json:"env"`
+	AutoRestart              bool              `json:"autorestart"`
+	CronRestart              string            `json:"cron_restart"`
+	MaxRestarts              int32             `json:"max_restarts"`
+	MinUptimeMS              int32             `json:"min_uptime"`
+	RestartDelayMS           int32             `json:"restart_delay"`
+	ExpBackoffRestartDelayMS int32             `json:"exp_backoff_restart_delay"`
+	MaxMemoryRestart         int64             `json:"max_memory_restart"`
+	HealthCheckURL           string            `json:"health_check_url"`
+	HealthCheckIntervalMS    int32             `json:"health_check_interval"`
+	HealthCheckTimeoutMS     int32             `json:"health_check_timeout"`
+	Watch                    bool              `json:"watch"`
+	WatchPaths               []string          `json:"watch_paths"`
+	WatchIntervalMS          int32             `json:"watch_interval"`
+	Logger                   *zerolog.Logger
 
 	PidPilePath string `json:"-"`
 	LogFilePath string `json:"-"`
@@ -98,18 +109,18 @@ func isPythonExecutable(executablePath string) bool {
 
 func commandEnvironment(base []string, overrides map[string]string, pythonExecutable bool) []string {
 	environment := utils.EnvironmentMap(base)
+	if overrides != nil {
+		environment = utils.CloneStringMap(overrides)
+		if environment == nil {
+			environment = make(map[string]string)
+		}
+	}
 	if pythonExecutable {
 		if _, hasOverride := overrides["PYTHONUNBUFFERED"]; !hasOverride {
 			if _, exists := environment["PYTHONUNBUFFERED"]; !exists {
 				environment["PYTHONUNBUFFERED"] = "1"
 			}
 		}
-	}
-	for key, value := range overrides {
-		if key == "" {
-			continue
-		}
-		environment[key] = value
 	}
 	return utils.EnvironmentSlice(environment)
 }
@@ -196,17 +207,28 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	}
 
 	rpcProcess := &pb.Process{
-		Name:           params.Name,
-		ExecutablePath: params.ExecutablePath,
-		Pid:            int32(cmd.Process.Pid),
-		Args:           params.Args,
-		Cwd:            params.Cwd,
-		LogFilePath:    params.LogFilePath,
-		ErrFilePath:    params.ErrFilePath,
-		PidFilePath:    params.PidPilePath,
-		AutoRestart:    params.AutoRestart,
-		CronRestart:    params.CronRestart,
-		Env:            utils.CloneStringMap(params.Env),
+		Name:                     params.Name,
+		ExecutablePath:           params.ExecutablePath,
+		Pid:                      int32(cmd.Process.Pid),
+		Args:                     params.Args,
+		Cwd:                      params.Cwd,
+		LogFilePath:              params.LogFilePath,
+		ErrFilePath:              params.ErrFilePath,
+		PidFilePath:              params.PidPilePath,
+		AutoRestart:              params.AutoRestart,
+		CronRestart:              params.CronRestart,
+		Env:                      utils.CloneStringMap(params.Env),
+		MaxRestarts:              params.MaxRestarts,
+		MinUptimeMs:              params.MinUptimeMS,
+		RestartDelayMs:           params.RestartDelayMS,
+		ExpBackoffRestartDelayMs: params.ExpBackoffRestartDelayMS,
+		MaxMemoryRestart:         params.MaxMemoryRestart,
+		HealthCheckUrl:           params.HealthCheckURL,
+		HealthCheckIntervalMs:    params.HealthCheckIntervalMS,
+		HealthCheckTimeoutMs:     params.HealthCheckTimeoutMS,
+		Watch:                    params.Watch,
+		WatchPaths:               params.WatchPaths,
+		WatchIntervalMs:          params.WatchIntervalMS,
 	}
 
 	return rpcProcess, nil

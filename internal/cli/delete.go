@@ -29,7 +29,7 @@ var deleteCmd = &cobra.Command{
 				return
 			}
 			for _, process := range db {
-				if process.ProcStatus.Status == "online" {
+				if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 					master.GetLogger().Info().Msgf("Applying action stopProcessId on app [%d](pid: [ %d ])", process.Id, process.Pid)
 					master.StopProcess(process.Id)
 				}
@@ -61,7 +61,7 @@ var deleteCmd = &cobra.Command{
 		}
 
 		// stop process if alive
-		if process.ProcStatus.Status == "online" {
+		if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 			logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 			master.StopProcess(process.Id)
 		}

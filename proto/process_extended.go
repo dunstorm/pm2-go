@@ -56,14 +56,18 @@ func (p *Process) ResetCPUMemory() {
 }
 
 func (p *Process) UpdateCPUMemory() {
+	_, _ = p.UpdateCPUMemoryStats()
+}
+
+func (p *Process) UpdateCPUMemoryStats() (int64, error) {
 	if p.Pid == 0 {
-		return
+		return 0, nil
 	}
 	// launch command and read content
 	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", p.Pid), "-o", "pcpu,rss")
 	output, err := cmd.Output()
 	if err != nil {
-		return
+		return 0, err
 	}
 	// output separator can be multiple whitespaces
 	// fix: error `parsing "": invalid syntax` in `strconv.ParseFloat`
@@ -73,8 +77,9 @@ func (p *Process) UpdateCPUMemory() {
 
 	// convert string to float
 	memory, _ := strconv.ParseFloat(outputSplit[1], 64)
-	memory = memory / 1024
-	p.ProcStatus.Memory = fmt.Sprintf("%.1fMB", memory)
+	memoryBytes := int64(memory * 1024)
+	p.ProcStatus.Memory = fmt.Sprintf("%.1fMB", memory/1024)
+	return memoryBytes, nil
 }
 
 func (p *Process) UpdateNextStartAt() error {
