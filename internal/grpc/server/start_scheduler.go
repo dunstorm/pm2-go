@@ -35,6 +35,12 @@ func restartProcess(handler *Handler, p *pb.Process) {
 		RestartDelayMS:           p.RestartDelayMs,
 		ExpBackoffRestartDelayMS: p.ExpBackoffRestartDelayMs,
 		MaxMemoryRestart:         p.MaxMemoryRestart,
+		HealthCheckURL:           p.HealthCheckUrl,
+		HealthCheckIntervalMS:    p.HealthCheckIntervalMs,
+		HealthCheckTimeoutMS:     p.HealthCheckTimeoutMs,
+		Watch:                    p.Watch,
+		WatchPaths:               p.WatchPaths,
+		WatchIntervalMS:          p.WatchIntervalMs,
 	})
 	if err != nil {
 		p.AutoRestart = false
@@ -113,7 +119,7 @@ func startScheduler(handler *Handler) {
 
 	// sync process
 	syncProcess := func(p *pb.Process) {
-		if p.ProcStatus.Status == "online" {
+		if isRunningState(p.ProcStatus.Status) {
 			if _, ok := utils.IsProcessRunning(p.Pid); !ok {
 				handler.mu.Lock()
 				defer handler.mu.Unlock()
@@ -140,6 +146,17 @@ func startScheduler(handler *Handler) {
 						restartProcess(handler, p)
 						handler.persistStateLocked()
 					}
+				}
+				if handleHealthCheck(handler, p) {
+					handler.mu.Lock()
+					handler.persistStateLocked()
+					handler.mu.Unlock()
+				}
+				if handleWatch(handler, p) {
+					handler.mu.Lock()
+					restartProcess(handler, p)
+					handler.persistStateLocked()
+					handler.mu.Unlock()
 				}
 			}
 		} else if p.RestartAt != nil && p.RestartAt.AsTime().Before(time.Now()) {

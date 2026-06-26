@@ -23,6 +23,12 @@ type Data struct {
 	RestartDelayMS           int32                        `json:"restart_delay"`
 	ExpBackoffRestartDelayMS int32                        `json:"exp_backoff_restart_delay"`
 	MaxMemoryRestart         int64                        `json:"max_memory_restart"`
+	HealthCheckURL           string                       `json:"health_check_url"`
+	HealthCheckIntervalMS    int32                        `json:"health_check_interval"`
+	HealthCheckTimeoutMS     int32                        `json:"health_check_timeout"`
+	Watch                    bool                         `json:"watch"`
+	WatchPaths               []string                     `json:"watch_paths"`
+	WatchIntervalMS          int32                        `json:"watch_interval"`
 	EnvProfiles              map[string]map[string]string `json:"-"`
 }
 
@@ -111,6 +117,12 @@ func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) 
 				RestartDelayMS:           p.RestartDelayMS,
 				ExpBackoffRestartDelayMS: p.ExpBackoffRestartDelayMS,
 				MaxMemoryRestart:         p.MaxMemoryRestart,
+				HealthCheckURL:           p.HealthCheckURL,
+				HealthCheckIntervalMS:    p.HealthCheckIntervalMS,
+				HealthCheckTimeoutMS:     p.HealthCheckTimeoutMS,
+				Watch:                    p.Watch,
+				WatchPaths:               p.WatchPaths,
+				WatchIntervalMS:          p.WatchIntervalMS,
 			})
 		} else {
 			restartProcess := processFromData(process.Id, p, env)
@@ -214,6 +226,12 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				RestartDelayMS:           p.RestartDelayMs,
 				ExpBackoffRestartDelayMS: p.ExpBackoffRestartDelayMs,
 				MaxMemoryRestart:         p.MaxMemoryRestart,
+				HealthCheckURL:           p.HealthCheckUrl,
+				HealthCheckIntervalMS:    p.HealthCheckIntervalMs,
+				HealthCheckTimeoutMS:     p.HealthCheckTimeoutMs,
+				Watch:                    p.Watch,
+				WatchPaths:               p.WatchPaths,
+				WatchIntervalMS:          p.WatchIntervalMs,
 			})
 		} else {
 			if process.ProcStatus.Status == "online" {
@@ -236,6 +254,12 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				RestartDelayMs:           p.RestartDelayMs,
 				ExpBackoffRestartDelayMs: p.ExpBackoffRestartDelayMs,
 				MaxMemoryRestart:         p.MaxMemoryRestart,
+				HealthCheckUrl:           p.HealthCheckUrl,
+				HealthCheckIntervalMs:    p.HealthCheckIntervalMs,
+				HealthCheckTimeoutMs:     p.HealthCheckTimeoutMs,
+				Watch:                    p.Watch,
+				WatchPaths:               p.WatchPaths,
+				WatchIntervalMs:          p.WatchIntervalMs,
 			})
 		}
 	}
@@ -256,6 +280,12 @@ func processFromData(id int32, data Data, env map[string]string) *pb.Process {
 		RestartDelayMs:           data.RestartDelayMS,
 		ExpBackoffRestartDelayMs: data.ExpBackoffRestartDelayMS,
 		MaxMemoryRestart:         data.MaxMemoryRestart,
+		HealthCheckUrl:           data.HealthCheckURL,
+		HealthCheckIntervalMs:    data.HealthCheckIntervalMS,
+		HealthCheckTimeoutMs:     data.HealthCheckTimeoutMS,
+		Watch:                    data.Watch,
+		WatchPaths:               data.WatchPaths,
+		WatchIntervalMs:          data.WatchIntervalMS,
 	}
 }
 

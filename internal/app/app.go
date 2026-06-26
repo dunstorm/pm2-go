@@ -23,6 +23,12 @@ type SpawnParams struct {
 	RestartDelayMS           int32
 	ExpBackoffRestartDelayMS int32
 	MaxMemoryRestart         int64
+	HealthCheckURL           string
+	HealthCheckIntervalMS    int32
+	HealthCheckTimeoutMS     int32
+	Watch                    bool
+	WatchPaths               []string
+	WatchIntervalMS          int32
 }
 
 type RestartOptions struct {
@@ -99,6 +105,12 @@ func (app *App) RestartProcessWithOptions(process *pb.Process, options RestartOp
 		RestartDelayMs:           process.RestartDelayMs,
 		ExpBackoffRestartDelayMs: process.ExpBackoffRestartDelayMs,
 		MaxMemoryRestart:         process.MaxMemoryRestart,
+		HealthCheckUrl:           process.HealthCheckUrl,
+		HealthCheckIntervalMs:    process.HealthCheckIntervalMs,
+		HealthCheckTimeoutMs:     process.HealthCheckTimeoutMs,
+		Watch:                    process.Watch,
+		WatchPaths:               process.WatchPaths,
+		WatchIntervalMs:          process.WatchIntervalMs,
 	})
 }
 
@@ -120,6 +132,12 @@ func (app *App) SpawnProcess(params SpawnParams) bool {
 		RestartDelayMs:           params.RestartDelayMS,
 		ExpBackoffRestartDelayMs: params.ExpBackoffRestartDelayMS,
 		MaxMemoryRestart:         params.MaxMemoryRestart,
+		HealthCheckUrl:           params.HealthCheckURL,
+		HealthCheckIntervalMs:    params.HealthCheckIntervalMS,
+		HealthCheckTimeoutMs:     params.HealthCheckTimeoutMS,
+		Watch:                    params.Watch,
+		WatchPaths:               params.WatchPaths,
+		WatchIntervalMs:          params.WatchIntervalMS,
 	})
 
 	if !resp.Success {

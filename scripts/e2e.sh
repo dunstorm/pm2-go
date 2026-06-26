@@ -260,6 +260,42 @@ write_memory_restart_ecosystem() {
 JSON
 }
 
+write_health_check_ecosystem() {
+	cat >"$TMP_HOME/health-check.json" <<'JSON'
+[
+  {
+    "name": "health-check-test",
+    "args": ["-c", "import time; time.sleep(20)"],
+    "autorestart": false,
+    "cwd": ".",
+    "executable_path": "python3",
+    "health_check_url": "http://127.0.0.1:9/unhealthy",
+    "health_check_interval": 500,
+    "health_check_timeout": 200
+  }
+]
+JSON
+}
+
+write_watch_ecosystem() {
+	mkdir -p "$TMP_HOME/watch-cwd"
+	printf 'initial\n' >"$TMP_HOME/watch-cwd/watched.txt"
+	cat >"$TMP_HOME/watch.json" <<JSON
+[
+  {
+    "name": "watch-test",
+    "args": ["-c", "import time; time.sleep(20)"],
+    "autorestart": false,
+    "cwd": "$TMP_HOME/watch-cwd",
+    "executable_path": "python3",
+    "watch": true,
+    "watch_paths": ["watched.txt"],
+    "watch_interval": 500
+  }
+]
+JSON
+}
+
 write_cron_ecosystem() {
 	cat >"$TMP_HOME/cron.json" <<'JSON'
 [
@@ -370,6 +406,12 @@ config_output="$(run_pm2 config)"
 assert_contains "$config_output" "log_rotate: true"
 assert_contains "$config_output" "log_rotate_max_files: 3"
 assert_contains "$config_output" "log_rotate_size: 1048576"
+
+log "startup unit generation"
+run_pm2 startup --unit-name pm2-go-e2e --user --output "$TMP_HOME/pm2-go.service" >/dev/null
+wait_for_file_contains "$TMP_HOME/pm2-go.service" "Description=PM2-GO process manager (pm2-go-e2e)" 5
+wait_for_file_contains "$TMP_HOME/pm2-go.service" "Environment=PM2_GO_HOME=$TMP_HOME/.pm2-go" 5
+wait_for_file_contains "$TMP_HOME/pm2-go.service" "WantedBy=default.target" 5
 
 log "describe process"
 describe_output="$(capture_pm2 describe python-test)"
@@ -511,6 +553,25 @@ wait_for_daemon_log "Process memory-restart-test exceeded max_memory_restart=104
 memory_restart_ls="$(wait_for_ls_contains "memory-restart-test" "online" 15)"
 assert_contains "$memory_restart_ls" "memory-restart-test"
 run_pm2 delete memory-restart-test >/dev/null
+
+log "health check status"
+write_health_check_ecosystem
+run_pm2 start "$TMP_HOME/health-check.json" >/dev/null
+health_ls="$(wait_for_ls_contains "health-check-test" "unhealthy" 15)"
+assert_contains "$health_ls" "health-check-test"
+run_pm2 delete health-check-test >/dev/null
+
+log "watch restart"
+write_watch_ecosystem
+run_pm2 start "$TMP_HOME/watch.json" >/dev/null
+watch_ls="$(wait_for_ls_contains "watch-test" "online" 10)"
+assert_contains "$watch_ls" "watch-test"
+sleep 2
+printf 'changed\n' >>"$TMP_HOME/watch-cwd/watched.txt"
+wait_for_daemon_log "Watched files changed for process watch-test" 15
+watch_restarted_ls="$(wait_for_ls_contains "watch-test" "online" 15)"
+assert_contains "$watch_restarted_ls" "watch-test"
+run_pm2 delete watch-test >/dev/null
 
 log "graceful reload"
 mkdir -p "$TMP_HOME/reload-cwd"

@@ -37,6 +37,12 @@ type processView struct {
 	RestartDelayMS           int32             `json:"restart_delay,omitempty"`
 	ExpBackoffRestartDelayMS int32             `json:"exp_backoff_restart_delay,omitempty"`
 	MaxMemoryRestart         int64             `json:"max_memory_restart,omitempty"`
+	HealthCheckURL           string            `json:"health_check_url,omitempty"`
+	HealthCheckIntervalMS    int32             `json:"health_check_interval,omitempty"`
+	HealthCheckTimeoutMS     int32             `json:"health_check_timeout,omitempty"`
+	Watch                    bool              `json:"watch,omitempty"`
+	WatchPaths               []string          `json:"watch_paths,omitempty"`
+	WatchIntervalMS          int32             `json:"watch_interval,omitempty"`
 	Status                   string            `json:"status,omitempty"`
 	ProcStatus               processStatusView `json:"proc_status"`
 }
@@ -60,6 +66,12 @@ func newProcessView(process *pb.Process) processView {
 		RestartDelayMS:           process.RestartDelayMs,
 		ExpBackoffRestartDelayMS: process.ExpBackoffRestartDelayMs,
 		MaxMemoryRestart:         process.MaxMemoryRestart,
+		HealthCheckURL:           process.HealthCheckUrl,
+		HealthCheckIntervalMS:    process.HealthCheckIntervalMs,
+		HealthCheckTimeoutMS:     process.HealthCheckTimeoutMs,
+		Watch:                    process.Watch,
+		WatchPaths:               process.WatchPaths,
+		WatchIntervalMS:          process.WatchIntervalMs,
 	}
 	if process.NextStartAt != nil {
 		view.NextStartAt = process.NextStartAt.AsTime().Format("2006-01-02T15:04:05Z07:00")

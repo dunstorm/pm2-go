@@ -48,6 +48,12 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 		RestartDelayMS:           in.RestartDelayMs,
 		ExpBackoffRestartDelayMS: in.ExpBackoffRestartDelayMs,
 		MaxMemoryRestart:         in.MaxMemoryRestart,
+		HealthCheckURL:           in.HealthCheckUrl,
+		HealthCheckIntervalMS:    in.HealthCheckIntervalMs,
+		HealthCheckTimeoutMS:     in.HealthCheckTimeoutMs,
+		Watch:                    in.Watch,
+		WatchPaths:               in.WatchPaths,
+		WatchIntervalMS:          in.WatchIntervalMs,
 	})
 
 	if err != nil {

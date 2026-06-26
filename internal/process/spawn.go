@@ -27,6 +27,12 @@ type SpawnParams struct {
 	RestartDelayMS           int32             `json:"restart_delay"`
 	ExpBackoffRestartDelayMS int32             `json:"exp_backoff_restart_delay"`
 	MaxMemoryRestart         int64             `json:"max_memory_restart"`
+	HealthCheckURL           string            `json:"health_check_url"`
+	HealthCheckIntervalMS    int32             `json:"health_check_interval"`
+	HealthCheckTimeoutMS     int32             `json:"health_check_timeout"`
+	Watch                    bool              `json:"watch"`
+	WatchPaths               []string          `json:"watch_paths"`
+	WatchIntervalMS          int32             `json:"watch_interval"`
 	Logger                   *zerolog.Logger
 
 	PidPilePath string `json:"-"`
@@ -217,6 +223,12 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		RestartDelayMs:           params.RestartDelayMS,
 		ExpBackoffRestartDelayMs: params.ExpBackoffRestartDelayMS,
 		MaxMemoryRestart:         params.MaxMemoryRestart,
+		HealthCheckUrl:           params.HealthCheckURL,
+		HealthCheckIntervalMs:    params.HealthCheckIntervalMS,
+		HealthCheckTimeoutMs:     params.HealthCheckTimeoutMS,
+		Watch:                    params.Watch,
+		WatchPaths:               params.WatchPaths,
+		WatchIntervalMs:          params.WatchIntervalMS,
 	}
 
 	return rpcProcess, nil

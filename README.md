@@ -21,10 +21,13 @@ PM2. Linux and macOS are supported; Windows is not currently supported.
 - Auto-restart crashed processes
 - Limit crash-loop restarts with `max_restarts`, `min_uptime`, and restart delays
 - Restart processes that exceed `max_memory_restart`
+- Mark processes unhealthy from HTTP health checks
+- Restart watched processes when configured files change
 - Restart processes on cron schedules
 - Restore online processes automatically when the daemon starts
 - Dump and restore process lists
 - Rotate logs by size and file count
+- Generate systemd units for daemon startup
 
 ## Requirements
 
@@ -125,6 +128,12 @@ Supported fields:
 | `restart_delay` | Fixed autorestart delay in milliseconds. |
 | `exp_backoff_restart_delay` | Initial autorestart delay in milliseconds, doubled after each unstable crash. |
 | `max_memory_restart` | RSS limit in bytes before PM2-GO restarts the process. |
+| `health_check_url` | Optional HTTP endpoint checked while the process is running. |
+| `health_check_interval` | Health check interval in milliseconds. |
+| `health_check_timeout` | Health check timeout in milliseconds. |
+| `watch` | Restart the process when watched paths change. |
+| `watch_paths` | Files or directories to poll when `watch` is enabled. |
+| `watch_interval` | Watch polling interval in milliseconds. |
 
 PM2-GO stores a complete environment with process metadata for restart, dump,
 and daemon restore flows. Direct commands use the shell environment from
@@ -161,6 +170,7 @@ and still lets the file's `env` values override matching keys.
 | `pm2-go restore [name]` | Restore a dumped process list. |
 | `pm2-go config` | Print local PM2-GO config. |
 | `pm2-go status [--json]` | Show daemon status. |
+| `pm2-go startup [--user] [--output pm2-go.service]` | Generate a systemd unit for daemon startup. |
 | `pm2-go kill` | Stop the daemon and managed processes. |
 
 ## Daemon and Files

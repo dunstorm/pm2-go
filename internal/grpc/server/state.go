@@ -25,6 +25,12 @@ type persistedProcess struct {
 	RestartDelayMS           int32             `json:"restart_delay,omitempty"`
 	ExpBackoffRestartDelayMS int32             `json:"exp_backoff_restart_delay,omitempty"`
 	MaxMemoryRestart         int64             `json:"max_memory_restart,omitempty"`
+	HealthCheckURL           string            `json:"health_check_url,omitempty"`
+	HealthCheckIntervalMS    int32             `json:"health_check_interval,omitempty"`
+	HealthCheckTimeoutMS     int32             `json:"health_check_timeout,omitempty"`
+	Watch                    bool              `json:"watch,omitempty"`
+	WatchPaths               []string          `json:"watch_paths,omitempty"`
+	WatchIntervalMS          int32             `json:"watch_interval,omitempty"`
 }
 
 func (api *Handler) restoreState() {
@@ -103,6 +109,12 @@ func newPersistedProcess(process *pb.Process) persistedProcess {
 		RestartDelayMS:           process.RestartDelayMs,
 		ExpBackoffRestartDelayMS: process.ExpBackoffRestartDelayMs,
 		MaxMemoryRestart:         process.MaxMemoryRestart,
+		HealthCheckURL:           process.HealthCheckUrl,
+		HealthCheckIntervalMS:    process.HealthCheckIntervalMs,
+		HealthCheckTimeoutMS:     process.HealthCheckTimeoutMs,
+		Watch:                    process.Watch,
+		WatchPaths:               process.WatchPaths,
+		WatchIntervalMS:          process.WatchIntervalMs,
 	}
 }
 
@@ -121,5 +133,11 @@ func (process persistedProcess) spawnRequest() *pb.SpawnProcessRequest {
 		RestartDelayMs:           process.RestartDelayMS,
 		ExpBackoffRestartDelayMs: process.ExpBackoffRestartDelayMS,
 		MaxMemoryRestart:         process.MaxMemoryRestart,
+		HealthCheckUrl:           process.HealthCheckURL,
+		HealthCheckIntervalMs:    process.HealthCheckIntervalMS,
+		HealthCheckTimeoutMs:     process.HealthCheckTimeoutMS,
+		Watch:                    process.Watch,
+		WatchPaths:               process.WatchPaths,
+		WatchIntervalMs:          process.WatchIntervalMS,
 	}
 }

@@ -128,6 +128,12 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		RestartDelayMS:           in.RestartDelayMs,
 		ExpBackoffRestartDelayMS: in.ExpBackoffRestartDelayMs,
 		MaxMemoryRestart:         in.MaxMemoryRestart,
+		HealthCheckURL:           in.HealthCheckUrl,
+		HealthCheckIntervalMS:    in.HealthCheckIntervalMs,
+		HealthCheckTimeoutMS:     in.HealthCheckTimeoutMs,
+		Watch:                    in.Watch,
+		WatchPaths:               in.WatchPaths,
+		WatchIntervalMS:          in.WatchIntervalMs,
 	})
 	if err != nil {
 		currentProcess.AutoRestart = false
@@ -157,6 +163,9 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	newProcess.NextStartAt = nextStartAt
 	newProcess.UnstableRestarts = currentProcess.UnstableRestarts
 	newProcess.CurrentRestartDelayMs = currentProcess.CurrentRestartDelayMs
+	newProcess.WatchSignatures = currentProcess.WatchSignatures
+	newProcess.LastHealthCheckAt = currentProcess.LastHealthCheckAt
+	newProcess.LastWatchCheckAt = currentProcess.LastWatchCheckAt
 
 	osProcess, running := utils.GetProcess(newProcess.Pid)
 	if !running {
