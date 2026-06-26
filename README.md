@@ -89,6 +89,9 @@ array or an object with an `apps` array.
     "env": {
       "APP_ENV": "production"
     },
+    "env_staging": {
+      "APP_ENV": "staging"
+    },
     "executable_path": "python3",
     "cron_restart": "* * * * *"
   }
@@ -99,6 +102,7 @@ Run it with:
 
 ```sh
 pm2-go start examples/ecosystem.json
+pm2-go start examples/ecosystem.json --env staging
 pm2-go restart examples/ecosystem.json
 pm2-go stop examples/ecosystem.json
 pm2-go delete examples/ecosystem.json
@@ -113,6 +117,7 @@ Supported fields:
 | `args` | Arguments passed to the executable. |
 | `cwd` | Working directory for the process. |
 | `env` | Environment variables added to the spawned process. |
+| `env_<name>` | Environment profile selected with `--env <name>`; profile values override `env`. |
 | `autorestart` | Restart the process when it exits unexpectedly. |
 | `cron_restart` | Five-field cron expression for scheduled restarts. |
 | `max_restarts` | Maximum unstable restarts before the process is marked `errored`. |
@@ -142,20 +147,20 @@ and still lets the file's `env` values override matching keys.
 | Command | Purpose |
 | --- | --- |
 | `pm2-go start <cmd> [args...]` | Start a direct command. |
-| `pm2-go start <file.json>` | Start or restart processes from an ecosystem file. |
+| `pm2-go start [--env name] <file.json>` | Start or restart processes from an ecosystem file. |
 | `pm2-go start all` | Start all known processes. |
-| `pm2-go ls` | List managed processes. |
-| `pm2-go describe <name\|id>` | Show process details and log paths. |
+| `pm2-go ls [--json]` | List managed processes. |
+| `pm2-go describe [--json] <name\|id>` | Show process details and log paths. |
 | `pm2-go logs [-l lines] <name\|id>` | Tail stdout and stderr logs. |
 | `pm2-go stop <name\|id\|file.json\|all>` | Stop processes without removing them from the process list. |
-| `pm2-go restart [--update-env] <name\|id\|file.json\|all>` | Restart processes. |
-| `pm2-go reload [--signal SIGTERM] [--kill-timeout 1600] [--update-env] <name\|id\|file.json\|all>` | Gracefully reload processes before force-kill fallback. |
+| `pm2-go restart [--env name] [--update-env] <name\|id\|file.json\|all>` | Restart processes. |
+| `pm2-go reload [--env name] [--signal SIGTERM] [--kill-timeout 1600] [--update-env] <name\|id\|file.json\|all>` | Gracefully reload processes before force-kill fallback. |
 | `pm2-go delete <name\|id\|file.json\|all>` | Stop and remove processes from the process list. |
 | `pm2-go flush [name\|id\|file.json\|all]` | Truncate process log files. |
 | `pm2-go dump [name]` | Save the current process list to `$HOME/.pm2-go/<name>.json`. |
 | `pm2-go restore [name]` | Restore a dumped process list. |
 | `pm2-go config` | Print local PM2-GO config. |
-| `pm2-go status` | Show daemon status. |
+| `pm2-go status [--json]` | Show daemon status. |
 | `pm2-go kill` | Stop the daemon and managed processes. |
 
 ## Daemon and Files

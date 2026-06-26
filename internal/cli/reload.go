@@ -23,6 +23,10 @@ var reloadCmd = &cobra.Command{
 		if err != nil {
 			logger.Fatal().Msg(err.Error())
 		}
+		envName, err := cmd.Flags().GetString("env")
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
 		signalName, err := cmd.Flags().GetString("signal")
 		if err != nil {
 			logger.Fatal().Msg(err.Error())
@@ -60,6 +64,7 @@ var reloadCmd = &cobra.Command{
 		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
 			err = master.StartFileWithOptions(args[0], app.StartFileOptions{
 				Env:           env,
+				EnvName:       envName,
 				Graceful:      true,
 				Signal:        signalName,
 				KillTimeoutMS: killTimeout,
@@ -85,6 +90,7 @@ var reloadCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(reloadCmd)
 	reloadCmd.Flags().Bool("update-env", false, "Update process environment from the current shell before reloading")
+	reloadCmd.Flags().String("env", "", "Use env_<name> values from an ecosystem file")
 	reloadCmd.Flags().String("signal", "SIGTERM", "Signal sent before force-killing a process")
 	reloadCmd.Flags().Int32("kill-timeout", 1600, "Milliseconds to wait before force-killing a process")
 }

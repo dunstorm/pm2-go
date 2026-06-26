@@ -21,6 +21,10 @@ var startCmd = &cobra.Command{
 		}
 
 		logger := master.GetLogger()
+		envName, err := cmd.Flags().GetString("env")
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
 
 		if args[0] == "all" {
 			db := master.ListProcess()
@@ -40,7 +44,7 @@ var startCmd = &cobra.Command{
 		// get file extension
 		// if it's a json file, parse it and start the app
 		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
-			err = master.StartFile(args[0])
+			err = master.StartFileWithOptions(args[0], app.StartFileOptions{EnvName: envName})
 			if err == nil {
 				renderProcessList()
 			} else {
@@ -86,4 +90,5 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// startCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	startCmd.Flags().String("env", "", "Use env_<name> values from an ecosystem file")
 }

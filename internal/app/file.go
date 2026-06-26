@@ -3,29 +3,60 @@ package app
 import (
 	"encoding/json"
 	"os"
+	"strings"
 
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 )
 
 type Data struct {
-	Name                     string            `json:"name"`
-	Args                     []string          `json:"args"`
-	ExecutablePath           string            `json:"executable_path"`
-	AutoRestart              bool              `json:"autorestart"`
-	Cwd                      string            `json:"cwd"`
-	Env                      map[string]string `json:"env"`
-	Scripts                  []string          `json:"scripts"`
-	CronRestart              string            `json:"cron_restart"`
-	MaxRestarts              int32             `json:"max_restarts"`
-	MinUptimeMS              int32             `json:"min_uptime"`
-	RestartDelayMS           int32             `json:"restart_delay"`
-	ExpBackoffRestartDelayMS int32             `json:"exp_backoff_restart_delay"`
-	MaxMemoryRestart         int64             `json:"max_memory_restart"`
+	Name                     string                       `json:"name"`
+	Args                     []string                     `json:"args"`
+	ExecutablePath           string                       `json:"executable_path"`
+	AutoRestart              bool                         `json:"autorestart"`
+	Cwd                      string                       `json:"cwd"`
+	Env                      map[string]string            `json:"env"`
+	Scripts                  []string                     `json:"scripts"`
+	CronRestart              string                       `json:"cron_restart"`
+	MaxRestarts              int32                        `json:"max_restarts"`
+	MinUptimeMS              int32                        `json:"min_uptime"`
+	RestartDelayMS           int32                        `json:"restart_delay"`
+	ExpBackoffRestartDelayMS int32                        `json:"exp_backoff_restart_delay"`
+	MaxMemoryRestart         int64                        `json:"max_memory_restart"`
+	EnvProfiles              map[string]map[string]string `json:"-"`
+}
+
+func (data *Data) UnmarshalJSON(content []byte) error {
+	type dataAlias Data
+	var decoded dataAlias
+	if err := json.Unmarshal(content, &decoded); err != nil {
+		return err
+	}
+	*data = Data(decoded)
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(content, &raw); err != nil {
+		return err
+	}
+	for key, value := range raw {
+		if !strings.HasPrefix(key, "env_") {
+			continue
+		}
+		var env map[string]string
+		if err := json.Unmarshal(value, &env); err != nil {
+			return err
+		}
+		if data.EnvProfiles == nil {
+			data.EnvProfiles = make(map[string]map[string]string)
+		}
+		data.EnvProfiles[strings.TrimPrefix(key, "env_")] = env
+	}
+	return nil
 }
 
 type StartFileOptions struct {
 	Env           map[string]string
+	EnvName       string
 	Graceful      bool
 	Signal        string
 	KillTimeoutMS int32
@@ -63,6 +94,9 @@ func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) 
 	for _, p := range payload {
 		process := app.FindProcess(p.Name)
 		env := utils.MergeStringMaps(baseEnv, p.Env)
+		if options.EnvName != "" {
+			env = utils.MergeStringMaps(env, p.EnvProfiles[options.EnvName])
+		}
 		if process == nil {
 			app.SpawnProcess(SpawnParams{
 				Name:                     p.Name,

@@ -27,6 +27,10 @@ var restartCmd = &cobra.Command{
 		if err != nil {
 			logger.Fatal().Msg(err.Error())
 		}
+		envName, err := cmd.Flags().GetString("env")
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
 		var env map[string]string
 		if updateEnv {
 			env = utils.EnvironmentMap(os.Environ())
@@ -50,7 +54,7 @@ var restartCmd = &cobra.Command{
 		// get file extension
 		// if it's a json file, parse it and start the app
 		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
-			err = master.StartFileWithOptions(args[0], app.StartFileOptions{Env: env})
+			err = master.StartFileWithOptions(args[0], app.StartFileOptions{Env: env, EnvName: envName})
 			if err == nil {
 				renderProcessList()
 			} else {
@@ -84,4 +88,5 @@ func init() {
 	// is called directly, e.g.:
 	// restartCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	restartCmd.Flags().Bool("update-env", false, "Update process environment from the current shell before restarting")
+	restartCmd.Flags().String("env", "", "Use env_<name> values from an ecosystem file")
 }

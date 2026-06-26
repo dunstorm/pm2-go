@@ -294,11 +294,15 @@ write_env_ecosystem() {
 [
   {
     "name": "env-test",
-    "args": ["-c", "import os, time; print(os.environ.get('PM2_GO_E2E_ENV')); print(os.environ.get('PM2_GO_E2E_CALLER_ENV')); time.sleep(20)"],
+    "args": ["-c", "import os, time; print(os.environ.get('PM2_GO_E2E_ENV')); print(os.environ.get('PM2_GO_E2E_CALLER_ENV')); print(os.environ.get('PM2_GO_PROFILE_ENV')); time.sleep(20)"],
     "autorestart": false,
     "cwd": ".",
     "env": {
       "PM2_GO_E2E_ENV": "ecosystem-value"
+    },
+    "env_production": {
+      "PM2_GO_E2E_ENV": "production-value",
+      "PM2_GO_PROFILE_ENV": "profile-only"
     },
     "executable_path": "python3"
   }
@@ -349,6 +353,11 @@ log "status after daemon start"
 status_output="$(capture_pm2 status)"
 assert_contains "$status_output" "PM2 Daemon Running"
 assert_contains "$status_output" "PID:"
+status_json="$(run_pm2 status --json)"
+assert_contains "$status_json" '"running": true'
+ls_json="$(run_pm2 ls --json)"
+assert_contains "$ls_json" '"name": "python-test"'
+assert_contains "$ls_json" '"status": "online"'
 
 log "config set and print"
 config_output="$(capture_pm2 config set logrotate true)"
@@ -367,6 +376,9 @@ describe_output="$(capture_pm2 describe python-test)"
 assert_contains "$describe_output" "Process with id"
 assert_contains "$describe_output" "python-test"
 assert_contains "$describe_output" "cron expression"
+describe_json="$(run_pm2 describe python-test --json)"
+assert_contains "$describe_json" '"name": "python-test"'
+assert_contains "$describe_json" '"cron_restart": "* * * * *"'
 
 log "logs command"
 stdout_log="$TMP_HOME/.pm2-go/logs/python-test-out.log"
@@ -469,9 +481,10 @@ run_pm2 start "$TMP_HOME/env.json" >/dev/null
 env_log="$TMP_HOME/.pm2-go/logs/env-test-out.log"
 wait_for_file_contains "$env_log" "ecosystem-value" 10
 run_pm2 flush env-test >/dev/null
-PM2_GO_E2E_ENV=caller-value PM2_GO_E2E_CALLER_ENV=caller-only run_pm2 restart "$TMP_HOME/env.json" --update-env >/dev/null
-wait_for_file_contains "$env_log" "ecosystem-value" 10
+PM2_GO_E2E_ENV=caller-value PM2_GO_E2E_CALLER_ENV=caller-only run_pm2 restart "$TMP_HOME/env.json" --update-env --env production >/dev/null
+wait_for_file_contains "$env_log" "production-value" 10
 wait_for_file_contains "$env_log" "caller-only" 10
+wait_for_file_contains "$env_log" "profile-only" 10
 run_pm2 delete env-test >/dev/null
 
 log "autorestart crashed process"

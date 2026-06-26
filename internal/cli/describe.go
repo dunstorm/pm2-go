@@ -32,6 +32,14 @@ var describeCmd = &cobra.Command{
 			logger.Error().Msg("Process not found")
 			return
 		}
+		jsonOutput, err := cmd.Flags().GetBool("json")
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
+		if jsonOutput {
+			writeJSON(newProcessView(process))
+			return
+		}
 
 		heading := color.New(color.FgWhite, color.BgWhite, color.Bold).PrintfFunc()
 		// Describing process with id - name
@@ -110,4 +118,5 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// describeCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	describeCmd.Flags().Bool("json", false, "Print process details as JSON")
 }
