@@ -76,3 +76,33 @@ func TestMergeStringMaps(t *testing.T) {
 		t.Fatalf("expected ADD from override, got %q", merged["ADD"])
 	}
 }
+
+func TestGetLogsReadsSmallFiles(t *testing.T) {
+	logFile := filepath.Join(t.TempDir(), "small.log")
+	if err := os.WriteFile(logFile, []byte("one\ntwo\nthree\n"), 0600); err != nil {
+		t.Fatalf("write log file: %v", err)
+	}
+
+	lines, err := GetLogs(logFile, 2)
+	if err != nil {
+		t.Fatalf("get logs: %v", err)
+	}
+	if len(lines) != 2 || lines[0] != "two" || lines[1] != "three" {
+		t.Fatalf("expected last two lines, got %#v", lines)
+	}
+}
+
+func TestGetLogsWithNonPositiveLineCountReturnsNoLines(t *testing.T) {
+	logFile := filepath.Join(t.TempDir(), "small.log")
+	if err := os.WriteFile(logFile, []byte("one\n"), 0600); err != nil {
+		t.Fatalf("write log file: %v", err)
+	}
+
+	lines, err := GetLogs(logFile, 0)
+	if err != nil {
+		t.Fatalf("get logs: %v", err)
+	}
+	if len(lines) != 0 {
+		t.Fatalf("expected no lines, got %#v", lines)
+	}
+}

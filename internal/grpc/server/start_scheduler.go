@@ -107,7 +107,7 @@ func restartLiveProcess(handler *Handler, p *pb.Process) {
 		}
 	}
 	if found != nil {
-		if err := found.Kill(); err != nil {
+		if err := utils.KillProcessGroup(found); err != nil {
 			handler.logger.Warn().Err(err).Msgf("Failed to stop process %s before restart", p.Name)
 		}
 	}
@@ -290,7 +290,14 @@ func startScheduler(handler *Handler) {
 
 	go func() {
 		for {
+			handler.mu.Lock()
+			processes := make([]*pb.Process, 0, len(handler.databaseById))
 			for _, p := range handler.databaseById {
+				processes = append(processes, p)
+			}
+			handler.mu.Unlock()
+
+			for _, p := range processes {
 				wg.Add(1)
 				go syncProcess(p)
 

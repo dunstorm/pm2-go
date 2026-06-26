@@ -24,5 +24,5 @@ func (api *Handler) FindProcess(ctx context.Context, in *pb.FindProcessRequest) 
 		return nil, status.Error(400, "failed to find process")
 	}
 
-	return process, nil
+	return cloneProcess(process), nil
 }

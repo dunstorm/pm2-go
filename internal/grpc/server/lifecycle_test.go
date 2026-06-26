@@ -3,7 +3,10 @@ package server_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +22,7 @@ func newProcessManager(t *testing.T) pb.ProcessManagerClient {
 	t.Setenv("HOME", t.TempDir())
 
 	port := testutil.StartGRPCServer(t)
-	conn, err := grpc.Dial(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial grpc server: %v", err)
 	}
@@ -194,6 +197,74 @@ func TestDeleteRunningProcessRemovesAndStopsProcess(t *testing.T) {
 		t.Fatal("expected deleted process not to be registered")
 	}
 	waitForProcessExit(t, process.Pid)
+}
+
+func TestDeleteRunningProcessStopsChildProcesses(t *testing.T) {
+	manager := newProcessManager(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cwd := t.TempDir()
+	childPIDFile := filepath.Join(cwd, "child.pid")
+	script := strings.Join([]string{
+		"import pathlib, subprocess, time",
+		"child = subprocess.Popen(['python3', '-c', 'import time; time.sleep(30)'])",
+		fmt.Sprintf("pathlib.Path(%q).write_text(str(child.pid))", childPIDFile),
+		"time.sleep(30)",
+	}, "; ")
+
+	resp, err := manager.SpawnProcess(ctx, &pb.SpawnProcessRequest{
+		Name:           "delete-process-group",
+		ExecutablePath: "python3",
+		Args:           []string{"-c", script},
+		Cwd:            cwd,
+	})
+	if err != nil {
+		t.Fatalf("spawn process: %v", err)
+	}
+	if !resp.Success {
+		t.Fatal("expected spawn to succeed")
+	}
+
+	process, err := manager.FindProcess(ctx, &pb.FindProcessRequest{Name: "delete-process-group"})
+	if err != nil {
+		t.Fatalf("find process: %v", err)
+	}
+
+	childPID := waitForPIDFile(t, childPIDFile)
+	if _, running := utils.IsProcessRunning(childPID); !running {
+		t.Fatalf("expected child process %d to be running", childPID)
+	}
+
+	deleteResp, err := manager.DeleteProcess(ctx, &pb.DeleteProcessRequest{Id: process.Id})
+	if err != nil {
+		t.Fatalf("delete running process: %v", err)
+	}
+	if !deleteResp.Success {
+		t.Fatal("expected delete running process to succeed")
+	}
+
+	waitForProcessExit(t, process.Pid)
+	waitForProcessExit(t, childPID)
+}
+
+func waitForPIDFile(t *testing.T, filePath string) int32 {
+	t.Helper()
+
+	for i := 0; i < 40; i++ {
+		contents, err := os.ReadFile(filePath)
+		if err == nil {
+			pid, parseErr := strconv.ParseInt(strings.TrimSpace(string(contents)), 10, 32)
+			if parseErr != nil {
+				t.Fatalf("parse child pid: %v", parseErr)
+			}
+			return int32(pid)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("pid file %s was not written", filePath)
+	return 0
 }
 
 func waitForProcessExit(t *testing.T, pid int32) {

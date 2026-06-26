@@ -43,7 +43,7 @@ var startCmd = &cobra.Command{
 		// check if args[0] is a file
 		// get file extension
 		// if it's a json file, parse it and start the app
-		if _, err := os.Stat(args[0]); err == nil && args[0][len(args[0])-5:] == ".json" {
+		if isJSONFilePath(args[0]) {
 			err = master.StartFileWithOptions(args[0], app.StartFileOptions{EnvName: envName, UseCurrentEnv: true})
 			if err == nil {
 				renderProcessList()

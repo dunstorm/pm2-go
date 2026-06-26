@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 
+	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 )
 
@@ -37,7 +38,7 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	process.ResetPid()
 
 	// for child process
-	found.Kill()
+	_ = utils.KillProcessGroup(found)
 	updateProcessMap(api, in.Id, nil)
 	api.persistStateLocked()
 

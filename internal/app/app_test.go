@@ -34,7 +34,7 @@ func TestProcessLifecycle(t *testing.T) {
 
 	foundProcess := app.FindProcess("test-process")
 	if foundProcess == nil {
-		t.Error("Failed to find added process")
+		t.Fatal("Failed to find added process")
 	}
 	if foundProcess.Name != "test-process" {
 		t.Errorf("Expected process name 'test-process', got '%s'", foundProcess.Name)
@@ -72,7 +72,7 @@ func TestProcessRestart(t *testing.T) {
 
 	restartedProcess := app.RestartProcess(foundProcess)
 	if restartedProcess == nil {
-		t.Error("Failed to restart process")
+		t.Fatal("Failed to restart process")
 	}
 	if restartedProcess.Pid == 0 {
 		t.Error("Restarted process has invalid PID")
