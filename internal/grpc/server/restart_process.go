@@ -112,6 +112,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		currentProcess.StopSignal = true
 		currentProcess.ResetPid()
 		updateProcessMap(api, in.Id, nil)
+		delete(api.metricsUpdatedAt, in.Id)
 	}
 
 	newProcess, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
@@ -176,6 +177,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	api.databaseById[newProcess.Id] = newProcess
 	api.databaseByName[newProcess.Name] = newProcess
 	api.processes[newProcess.Id] = osProcess
+	delete(api.metricsUpdatedAt, newProcess.Id)
 	api.persistStateLocked()
 
 	go osProcess.Wait()

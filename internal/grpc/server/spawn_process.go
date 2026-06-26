@@ -86,6 +86,7 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 	api.databaseById[api.nextId] = process
 	api.databaseByName[process.Name] = process
 	api.processes[process.Id] = osProcess
+	delete(api.metricsUpdatedAt, process.Id)
 	api.nextId++
 	api.persistStateLocked()
 

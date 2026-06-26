@@ -1,6 +1,7 @@
 package __
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -12,6 +13,12 @@ import (
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
+
+type CPUMemoryStats struct {
+	CPU         string
+	Memory      string
+	MemoryBytes int64
+}
 
 func (p *Process) UpdateStatus(status string) {
 	p.ProcStatus.Status = status
@@ -59,27 +66,55 @@ func (p *Process) UpdateCPUMemory() {
 	_, _ = p.UpdateCPUMemoryStats()
 }
 
-func (p *Process) UpdateCPUMemoryStats() (int64, error) {
+func (p *Process) ReadCPUMemoryStats() (CPUMemoryStats, error) {
 	if p.Pid == 0 {
-		return 0, nil
+		return CPUMemoryStats{
+			CPU:    "0.0%",
+			Memory: "0.0MB",
+		}, nil
 	}
 	// launch command and read content
 	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", p.Pid), "-o", "pcpu,rss")
 	output, err := cmd.Output()
 	if err != nil {
-		return 0, err
+		return CPUMemoryStats{}, err
 	}
 	// output separator can be multiple whitespaces
 	// fix: error `parsing "": invalid syntax` in `strconv.ParseFloat`
-	outputSplit := strings.Fields(strings.TrimSpace(strings.Split(string(output), "\n")[1]))
-
-	p.ProcStatus.Cpu = fmt.Sprint(outputSplit[0], "%")
+	outputLines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(outputLines) < 2 {
+		return CPUMemoryStats{}, errors.New("missing process metrics")
+	}
+	outputSplit := strings.Fields(outputLines[1])
+	if len(outputSplit) < 2 {
+		return CPUMemoryStats{}, errors.New("invalid process metrics")
+	}
 
 	// convert string to float
-	memory, _ := strconv.ParseFloat(outputSplit[1], 64)
+	memory, err := strconv.ParseFloat(outputSplit[1], 64)
+	if err != nil {
+		return CPUMemoryStats{}, err
+	}
 	memoryBytes := int64(memory * 1024)
-	p.ProcStatus.Memory = fmt.Sprintf("%.1fMB", memory/1024)
-	return memoryBytes, nil
+	return CPUMemoryStats{
+		CPU:         fmt.Sprint(outputSplit[0], "%"),
+		Memory:      fmt.Sprintf("%.1fMB", memory/1024),
+		MemoryBytes: memoryBytes,
+	}, nil
+}
+
+func (p *Process) UpdateCPUMemoryStats() (int64, error) {
+	if p.Pid == 0 {
+		return 0, nil
+	}
+
+	stats, err := p.ReadCPUMemoryStats()
+	if err != nil {
+		return 0, err
+	}
+	p.ProcStatus.Cpu = stats.CPU
+	p.ProcStatus.Memory = stats.Memory
+	return stats.MemoryBytes, nil
 }
 
 func (p *Process) UpdateNextStartAt() error {
