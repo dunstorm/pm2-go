@@ -9,14 +9,19 @@ import (
 )
 
 type Data struct {
-	Name           string            `json:"name"`
-	Args           []string          `json:"args"`
-	ExecutablePath string            `json:"executable_path"`
-	AutoRestart    bool              `json:"autorestart"`
-	Cwd            string            `json:"cwd"`
-	Env            map[string]string `json:"env"`
-	Scripts        []string          `json:"scripts"`
-	CronRestart    string            `json:"cron_restart"`
+	Name                     string            `json:"name"`
+	Args                     []string          `json:"args"`
+	ExecutablePath           string            `json:"executable_path"`
+	AutoRestart              bool              `json:"autorestart"`
+	Cwd                      string            `json:"cwd"`
+	Env                      map[string]string `json:"env"`
+	Scripts                  []string          `json:"scripts"`
+	CronRestart              string            `json:"cron_restart"`
+	MaxRestarts              int32             `json:"max_restarts"`
+	MinUptimeMS              int32             `json:"min_uptime"`
+	RestartDelayMS           int32             `json:"restart_delay"`
+	ExpBackoffRestartDelayMS int32             `json:"exp_backoff_restart_delay"`
+	MaxMemoryRestart         int64             `json:"max_memory_restart"`
 }
 
 type StartFileOptions struct {
@@ -60,13 +65,18 @@ func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) 
 		env := utils.MergeStringMaps(baseEnv, p.Env)
 		if process == nil {
 			app.SpawnProcess(SpawnParams{
-				Name:           p.Name,
-				Args:           p.Args,
-				ExecutablePath: p.ExecutablePath,
-				AutoRestart:    p.AutoRestart,
-				Cwd:            p.Cwd,
-				CronRestart:    p.CronRestart,
-				Env:            env,
+				Name:                     p.Name,
+				Args:                     p.Args,
+				ExecutablePath:           p.ExecutablePath,
+				AutoRestart:              p.AutoRestart,
+				Cwd:                      p.Cwd,
+				CronRestart:              p.CronRestart,
+				Env:                      env,
+				MaxRestarts:              p.MaxRestarts,
+				MinUptimeMS:              p.MinUptimeMS,
+				RestartDelayMS:           p.RestartDelayMS,
+				ExpBackoffRestartDelayMS: p.ExpBackoffRestartDelayMS,
+				MaxMemoryRestart:         p.MaxMemoryRestart,
 			})
 		} else {
 			restartProcess := processFromData(process.Id, p, env)
@@ -158,13 +168,18 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 		process := app.FindProcess(p.Name)
 		if process == nil || process.ProcStatus == nil {
 			app.SpawnProcess(SpawnParams{
-				Name:           p.Name,
-				Args:           p.Args,
-				ExecutablePath: p.ExecutablePath,
-				AutoRestart:    p.AutoRestart,
-				Cwd:            p.Cwd,
-				CronRestart:    p.CronRestart,
-				Env:            p.Env,
+				Name:                     p.Name,
+				Args:                     p.Args,
+				ExecutablePath:           p.ExecutablePath,
+				AutoRestart:              p.AutoRestart,
+				Cwd:                      p.Cwd,
+				CronRestart:              p.CronRestart,
+				Env:                      p.Env,
+				MaxRestarts:              p.MaxRestarts,
+				MinUptimeMS:              p.MinUptimeMs,
+				RestartDelayMS:           p.RestartDelayMs,
+				ExpBackoffRestartDelayMS: p.ExpBackoffRestartDelayMs,
+				MaxMemoryRestart:         p.MaxMemoryRestart,
 			})
 		} else {
 			if process.ProcStatus.Status == "online" {
@@ -174,14 +189,19 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 			}
 			p.Id = process.Id
 			app.RestartProcess(&pb.Process{
-				Id:             p.Id,
-				Name:           p.Name,
-				Args:           p.Args,
-				ExecutablePath: p.ExecutablePath,
-				AutoRestart:    p.AutoRestart,
-				Cwd:            p.Cwd,
-				CronRestart:    p.CronRestart,
-				Env:            p.Env,
+				Id:                       p.Id,
+				Name:                     p.Name,
+				Args:                     p.Args,
+				ExecutablePath:           p.ExecutablePath,
+				AutoRestart:              p.AutoRestart,
+				Cwd:                      p.Cwd,
+				CronRestart:              p.CronRestart,
+				Env:                      p.Env,
+				MaxRestarts:              p.MaxRestarts,
+				MinUptimeMs:              p.MinUptimeMs,
+				RestartDelayMs:           p.RestartDelayMs,
+				ExpBackoffRestartDelayMs: p.ExpBackoffRestartDelayMs,
+				MaxMemoryRestart:         p.MaxMemoryRestart,
 			})
 		}
 	}
@@ -189,14 +209,19 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 
 func processFromData(id int32, data Data, env map[string]string) *pb.Process {
 	return &pb.Process{
-		Id:             id,
-		Name:           data.Name,
-		Args:           data.Args,
-		ExecutablePath: data.ExecutablePath,
-		AutoRestart:    data.AutoRestart,
-		Cwd:            data.Cwd,
-		CronRestart:    data.CronRestart,
-		Env:            env,
+		Id:                       id,
+		Name:                     data.Name,
+		Args:                     data.Args,
+		ExecutablePath:           data.ExecutablePath,
+		AutoRestart:              data.AutoRestart,
+		Cwd:                      data.Cwd,
+		CronRestart:              data.CronRestart,
+		Env:                      env,
+		MaxRestarts:              data.MaxRestarts,
+		MinUptimeMs:              data.MinUptimeMS,
+		RestartDelayMs:           data.RestartDelayMS,
+		ExpBackoffRestartDelayMs: data.ExpBackoffRestartDelayMS,
+		MaxMemoryRestart:         data.MaxMemoryRestart,
 	}
 }
 

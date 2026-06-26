@@ -12,14 +12,19 @@ import (
 )
 
 type persistedProcess struct {
-	Name           string            `json:"name"`
-	Args           []string          `json:"args,omitempty"`
-	Scripts        []string          `json:"scripts,omitempty"`
-	ExecutablePath string            `json:"executable_path"`
-	AutoRestart    bool              `json:"autorestart"`
-	Cwd            string            `json:"cwd,omitempty"`
-	CronRestart    string            `json:"cron_restart,omitempty"`
-	Env            map[string]string `json:"env,omitempty"`
+	Name                     string            `json:"name"`
+	Args                     []string          `json:"args,omitempty"`
+	Scripts                  []string          `json:"scripts,omitempty"`
+	ExecutablePath           string            `json:"executable_path"`
+	AutoRestart              bool              `json:"autorestart"`
+	Cwd                      string            `json:"cwd,omitempty"`
+	CronRestart              string            `json:"cron_restart,omitempty"`
+	Env                      map[string]string `json:"env,omitempty"`
+	MaxRestarts              int32             `json:"max_restarts,omitempty"`
+	MinUptimeMS              int32             `json:"min_uptime,omitempty"`
+	RestartDelayMS           int32             `json:"restart_delay,omitempty"`
+	ExpBackoffRestartDelayMS int32             `json:"exp_backoff_restart_delay,omitempty"`
+	MaxMemoryRestart         int64             `json:"max_memory_restart,omitempty"`
 }
 
 func (api *Handler) restoreState() {
@@ -85,26 +90,36 @@ func shouldPersistProcess(process *pb.Process) bool {
 
 func newPersistedProcess(process *pb.Process) persistedProcess {
 	return persistedProcess{
-		Name:           process.Name,
-		Args:           process.Args,
-		Scripts:        process.Scripts,
-		ExecutablePath: process.ExecutablePath,
-		AutoRestart:    process.AutoRestart,
-		Cwd:            process.Cwd,
-		CronRestart:    process.CronRestart,
-		Env:            utils.CloneStringMap(process.Env),
+		Name:                     process.Name,
+		Args:                     process.Args,
+		Scripts:                  process.Scripts,
+		ExecutablePath:           process.ExecutablePath,
+		AutoRestart:              process.AutoRestart,
+		Cwd:                      process.Cwd,
+		CronRestart:              process.CronRestart,
+		Env:                      utils.CloneStringMap(process.Env),
+		MaxRestarts:              process.MaxRestarts,
+		MinUptimeMS:              process.MinUptimeMs,
+		RestartDelayMS:           process.RestartDelayMs,
+		ExpBackoffRestartDelayMS: process.ExpBackoffRestartDelayMs,
+		MaxMemoryRestart:         process.MaxMemoryRestart,
 	}
 }
 
 func (process persistedProcess) spawnRequest() *pb.SpawnProcessRequest {
 	return &pb.SpawnProcessRequest{
-		Name:           process.Name,
-		Args:           process.Args,
-		Scripts:        process.Scripts,
-		ExecutablePath: process.ExecutablePath,
-		AutoRestart:    process.AutoRestart,
-		Cwd:            process.Cwd,
-		CronRestart:    process.CronRestart,
-		Env:            process.Env,
+		Name:                     process.Name,
+		Args:                     process.Args,
+		Scripts:                  process.Scripts,
+		ExecutablePath:           process.ExecutablePath,
+		AutoRestart:              process.AutoRestart,
+		Cwd:                      process.Cwd,
+		CronRestart:              process.CronRestart,
+		Env:                      process.Env,
+		MaxRestarts:              process.MaxRestarts,
+		MinUptimeMs:              process.MinUptimeMS,
+		RestartDelayMs:           process.RestartDelayMS,
+		ExpBackoffRestartDelayMs: process.ExpBackoffRestartDelayMS,
+		MaxMemoryRestart:         process.MaxMemoryRestart,
 	}
 }

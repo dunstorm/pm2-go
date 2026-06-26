@@ -19,6 +19,8 @@ PM2. Linux and macOS are supported; Windows is not currently supported.
 - Stop, restart, delete, and flush logs by name, id, JSON file, or `all`
 - Tail stdout and stderr logs
 - Auto-restart crashed processes
+- Limit crash-loop restarts with `max_restarts`, `min_uptime`, and restart delays
+- Restart processes that exceed `max_memory_restart`
 - Restart processes on cron schedules
 - Restore online processes automatically when the daemon starts
 - Dump and restore process lists
@@ -113,6 +115,11 @@ Supported fields:
 | `env` | Environment variables added to the spawned process. |
 | `autorestart` | Restart the process when it exits unexpectedly. |
 | `cron_restart` | Five-field cron expression for scheduled restarts. |
+| `max_restarts` | Maximum unstable restarts before the process is marked `errored`. |
+| `min_uptime` | Minimum stable runtime in milliseconds before crash counters reset. |
+| `restart_delay` | Fixed autorestart delay in milliseconds. |
+| `exp_backoff_restart_delay` | Initial autorestart delay in milliseconds, doubled after each unstable crash. |
+| `max_memory_restart` | RSS limit in bytes before PM2-GO restarts the process. |
 
 PM2-GO stores a complete environment with process metadata for restart, dump,
 and daemon restore flows. Direct commands use the shell environment from

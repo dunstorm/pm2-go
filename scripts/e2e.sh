@@ -228,6 +228,38 @@ write_autorestart_ecosystem() {
 JSON
 }
 
+write_restart_limit_ecosystem() {
+	cat >"$TMP_HOME/restart-limit.json" <<'JSON'
+[
+  {
+    "name": "restart-limit-test",
+    "args": ["-c", "import time, sys; time.sleep(0.1); sys.exit(2)"],
+    "autorestart": true,
+    "cwd": ".",
+    "executable_path": "python3",
+    "max_restarts": 1,
+    "min_uptime": 1000,
+    "exp_backoff_restart_delay": 100
+  }
+]
+JSON
+}
+
+write_memory_restart_ecosystem() {
+	cat >"$TMP_HOME/memory-restart.json" <<'JSON'
+[
+  {
+    "name": "memory-restart-test",
+    "args": ["-c", "import time; data = bytearray(8 * 1024 * 1024); time.sleep(20)"],
+    "autorestart": false,
+    "cwd": ".",
+    "executable_path": "python3",
+    "max_memory_restart": 1048576
+  }
+]
+JSON
+}
+
 write_cron_ecosystem() {
 	cat >"$TMP_HOME/cron.json" <<'JSON'
 [
@@ -449,6 +481,23 @@ wait_for_daemon_log "Restarting process autorestart-test" 15
 autorestart_ls="$(run_pm2 ls)"
 assert_contains "$autorestart_ls" "autorestart-test"
 run_pm2 delete autorestart-test >/dev/null
+
+log "restart limits and backoff"
+write_restart_limit_ecosystem
+run_pm2 start "$TMP_HOME/restart-limit.json" >/dev/null
+wait_for_daemon_log "Scheduling restart for process restart-limit-test" 15
+wait_for_daemon_log "Process restart-limit-test exceeded max_restarts=1" 15
+restart_limit_ls="$(wait_for_ls_contains "restart-limit-test" "errored" 15)"
+assert_contains "$restart_limit_ls" "restart-limit-test"
+run_pm2 delete restart-limit-test >/dev/null
+
+log "memory restart"
+write_memory_restart_ecosystem
+run_pm2 start "$TMP_HOME/memory-restart.json" >/dev/null
+wait_for_daemon_log "Process memory-restart-test exceeded max_memory_restart=1048576 bytes" 15
+memory_restart_ls="$(wait_for_ls_contains "memory-restart-test" "online" 15)"
+assert_contains "$memory_restart_ls" "memory-restart-test"
+run_pm2 delete memory-restart-test >/dev/null
 
 log "graceful reload"
 mkdir -p "$TMP_HOME/reload-cwd"

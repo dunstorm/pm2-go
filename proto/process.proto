@@ -45,6 +45,14 @@ message Process {
     bool stop_signal = 15;
     int32 log_file_count = 16;
     map<string, string> env = 17;
+    int32 max_restarts = 18;
+    int32 min_uptime_ms = 19;
+    int32 restart_delay_ms = 20;
+    int32 exp_backoff_restart_delay_ms = 21;
+    int64 max_memory_restart = 22;
+    int32 unstable_restarts = 23;
+    int32 current_restart_delay_ms = 24;
+    google.protobuf.Timestamp restart_at = 25;
 }
 
 message FindProcessRequest {
@@ -83,6 +91,11 @@ message SpawnProcessRequest {
     string cwd = 7;
     string cron_restart = 11;
     map<string, string> env = 12;
+    int32 max_restarts = 13;
+    int32 min_uptime_ms = 14;
+    int32 restart_delay_ms = 15;
+    int32 exp_backoff_restart_delay_ms = 16;
+    int64 max_memory_restart = 17;
 }
 
 message SpawnProcessResponse {
@@ -102,4 +115,9 @@ message RestartProcessRequest {
     bool graceful = 14;
     string signal = 15;
     int32 kill_timeout_ms = 16;
+    int32 max_restarts = 17;
+    int32 min_uptime_ms = 18;
+    int32 restart_delay_ms = 19;
+    int32 exp_backoff_restart_delay_ms = 20;
+    int64 max_memory_restart = 21;
 }

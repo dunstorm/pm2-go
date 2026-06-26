@@ -11,13 +11,18 @@ import (
 )
 
 type SpawnParams struct {
-	Name           string
-	ExecutablePath string
-	Args           []string
-	Cwd            string
-	Env            map[string]string
-	AutoRestart    bool
-	CronRestart    string
+	Name                     string
+	ExecutablePath           string
+	Args                     []string
+	Cwd                      string
+	Env                      map[string]string
+	AutoRestart              bool
+	CronRestart              string
+	MaxRestarts              int32
+	MinUptimeMS              int32
+	RestartDelayMS           int32
+	ExpBackoffRestartDelayMS int32
+	MaxMemoryRestart         int64
 }
 
 type RestartOptions struct {
@@ -78,17 +83,22 @@ func (app *App) RestartProcessWithOptions(process *pb.Process, options RestartOp
 	}
 
 	return app.client.RestartProcess(&pb.RestartProcessRequest{
-		Id:             process.Id,
-		Name:           process.Name,
-		Args:           process.Args,
-		ExecutablePath: process.ExecutablePath,
-		AutoRestart:    process.AutoRestart,
-		Cwd:            process.Cwd,
-		CronRestart:    process.CronRestart,
-		Env:            options.Env,
-		Graceful:       options.Graceful,
-		Signal:         options.Signal,
-		KillTimeoutMs:  options.KillTimeoutMS,
+		Id:                       process.Id,
+		Name:                     process.Name,
+		Args:                     process.Args,
+		ExecutablePath:           process.ExecutablePath,
+		AutoRestart:              process.AutoRestart,
+		Cwd:                      process.Cwd,
+		CronRestart:              process.CronRestart,
+		Env:                      options.Env,
+		Graceful:                 options.Graceful,
+		Signal:                   options.Signal,
+		KillTimeoutMs:            options.KillTimeoutMS,
+		MaxRestarts:              process.MaxRestarts,
+		MinUptimeMs:              process.MinUptimeMs,
+		RestartDelayMs:           process.RestartDelayMs,
+		ExpBackoffRestartDelayMs: process.ExpBackoffRestartDelayMs,
+		MaxMemoryRestart:         process.MaxMemoryRestart,
 	})
 }
 
@@ -98,13 +108,18 @@ func (app *App) DeleteProcess(process *pb.Process) bool {
 
 func (app *App) SpawnProcess(params SpawnParams) bool {
 	resp := app.client.SpawnProcess(&pb.SpawnProcessRequest{
-		Name:           params.Name,
-		ExecutablePath: params.ExecutablePath,
-		Args:           params.Args,
-		Cwd:            params.Cwd,
-		AutoRestart:    params.AutoRestart,
-		CronRestart:    params.CronRestart,
-		Env:            params.Env,
+		Name:                     params.Name,
+		ExecutablePath:           params.ExecutablePath,
+		Args:                     params.Args,
+		Cwd:                      params.Cwd,
+		AutoRestart:              params.AutoRestart,
+		CronRestart:              params.CronRestart,
+		Env:                      params.Env,
+		MaxRestarts:              params.MaxRestarts,
+		MinUptimeMs:              params.MinUptimeMS,
+		RestartDelayMs:           params.RestartDelayMS,
+		ExpBackoffRestartDelayMs: params.ExpBackoffRestartDelayMS,
+		MaxMemoryRestart:         params.MaxMemoryRestart,
 	})
 
 	if !resp.Success {

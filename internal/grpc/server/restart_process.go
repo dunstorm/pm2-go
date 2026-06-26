@@ -115,14 +115,19 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	}
 
 	newProcess, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
-		Name:           in.Name,
-		Args:           in.Args,
-		ExecutablePath: in.ExecutablePath,
-		AutoRestart:    in.AutoRestart,
-		Cwd:            in.Cwd,
-		Logger:         api.logger,
-		CronRestart:    in.CronRestart,
-		Env:            in.Env,
+		Name:                     in.Name,
+		Args:                     in.Args,
+		ExecutablePath:           in.ExecutablePath,
+		AutoRestart:              in.AutoRestart,
+		Cwd:                      in.Cwd,
+		Logger:                   api.logger,
+		CronRestart:              in.CronRestart,
+		Env:                      in.Env,
+		MaxRestarts:              in.MaxRestarts,
+		MinUptimeMS:              in.MinUptimeMs,
+		RestartDelayMS:           in.RestartDelayMs,
+		ExpBackoffRestartDelayMS: in.ExpBackoffRestartDelayMs,
+		MaxMemoryRestart:         in.MaxMemoryRestart,
 	})
 	if err != nil {
 		currentProcess.AutoRestart = false
@@ -150,6 +155,8 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		ParentPid: int32(os.Getpid()),
 	}
 	newProcess.NextStartAt = nextStartAt
+	newProcess.UnstableRestarts = currentProcess.UnstableRestarts
+	newProcess.CurrentRestartDelayMs = currentProcess.CurrentRestartDelayMs
 
 	osProcess, running := utils.GetProcess(newProcess.Pid)
 	if !running {

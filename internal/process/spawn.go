@@ -15,14 +15,19 @@ import (
 )
 
 type SpawnParams struct {
-	Name           string            `json:"name"`
-	ExecutablePath string            `json:"executablePath"`
-	Args           []string          `json:"args"`
-	Cwd            string            `json:"cwd"`
-	Env            map[string]string `json:"env"`
-	AutoRestart    bool              `json:"autorestart"`
-	CronRestart    string            `json:"cron_restart"`
-	Logger         *zerolog.Logger
+	Name                     string            `json:"name"`
+	ExecutablePath           string            `json:"executablePath"`
+	Args                     []string          `json:"args"`
+	Cwd                      string            `json:"cwd"`
+	Env                      map[string]string `json:"env"`
+	AutoRestart              bool              `json:"autorestart"`
+	CronRestart              string            `json:"cron_restart"`
+	MaxRestarts              int32             `json:"max_restarts"`
+	MinUptimeMS              int32             `json:"min_uptime"`
+	RestartDelayMS           int32             `json:"restart_delay"`
+	ExpBackoffRestartDelayMS int32             `json:"exp_backoff_restart_delay"`
+	MaxMemoryRestart         int64             `json:"max_memory_restart"`
+	Logger                   *zerolog.Logger
 
 	PidPilePath string `json:"-"`
 	LogFilePath string `json:"-"`
@@ -196,17 +201,22 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	}
 
 	rpcProcess := &pb.Process{
-		Name:           params.Name,
-		ExecutablePath: params.ExecutablePath,
-		Pid:            int32(cmd.Process.Pid),
-		Args:           params.Args,
-		Cwd:            params.Cwd,
-		LogFilePath:    params.LogFilePath,
-		ErrFilePath:    params.ErrFilePath,
-		PidFilePath:    params.PidPilePath,
-		AutoRestart:    params.AutoRestart,
-		CronRestart:    params.CronRestart,
-		Env:            utils.CloneStringMap(params.Env),
+		Name:                     params.Name,
+		ExecutablePath:           params.ExecutablePath,
+		Pid:                      int32(cmd.Process.Pid),
+		Args:                     params.Args,
+		Cwd:                      params.Cwd,
+		LogFilePath:              params.LogFilePath,
+		ErrFilePath:              params.ErrFilePath,
+		PidFilePath:              params.PidPilePath,
+		AutoRestart:              params.AutoRestart,
+		CronRestart:              params.CronRestart,
+		Env:                      utils.CloneStringMap(params.Env),
+		MaxRestarts:              params.MaxRestarts,
+		MinUptimeMs:              params.MinUptimeMS,
+		RestartDelayMs:           params.RestartDelayMS,
+		ExpBackoffRestartDelayMs: params.ExpBackoffRestartDelayMS,
+		MaxMemoryRestart:         params.MaxMemoryRestart,
 	}
 
 	return rpcProcess, nil
