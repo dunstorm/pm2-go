@@ -49,6 +49,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		Cwd:            in.Cwd,
 		Logger:         api.logger,
 		CronRestart:    in.CronRestart,
+		Env:            in.Env,
 	})
 	if err != nil {
 		currentProcess.AutoRestart = false
@@ -86,6 +87,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	api.databaseById[newProcess.Id] = newProcess
 	api.databaseByName[newProcess.Name] = newProcess
 	api.processes[newProcess.Id] = osProcess
+	api.persistStateLocked()
 
 	go osProcess.Wait()
 

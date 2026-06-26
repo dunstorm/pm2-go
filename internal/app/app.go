@@ -15,6 +15,7 @@ type SpawnParams struct {
 	ExecutablePath string
 	Args           []string
 	Cwd            string
+	Env            map[string]string
 	AutoRestart    bool
 	CronRestart    string
 }
@@ -65,6 +66,7 @@ func (app *App) RestartProcess(process *pb.Process) *pb.Process {
 		AutoRestart:    process.AutoRestart,
 		Cwd:            process.Cwd,
 		CronRestart:    process.CronRestart,
+		Env:            process.Env,
 	})
 }
 
@@ -80,6 +82,7 @@ func (app *App) SpawnProcess(params SpawnParams) bool {
 		Cwd:            params.Cwd,
 		AutoRestart:    params.AutoRestart,
 		CronRestart:    params.CronRestart,
+		Env:            params.Env,
 	})
 
 	if !resp.Success {

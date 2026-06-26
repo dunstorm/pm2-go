@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/dunstorm/pm2-go/internal/app"
+	"github.com/dunstorm/pm2-go/internal/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -58,9 +59,15 @@ var startCmd = &cobra.Command{
 		}
 
 		// add process to the database
+		cwd, err := os.Getwd()
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
 		master.SpawnProcess(app.SpawnParams{
 			ExecutablePath: args[0],
 			Args:           args[1:],
+			Cwd:            cwd,
+			Env:            utils.EnvironmentMap(os.Environ()),
 		})
 
 		renderProcessList()

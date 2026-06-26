@@ -11,6 +11,7 @@ import (
 
 func StartGRPCServer(t testing.TB) int {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
 
 	grpcServer, lis, err := server.NewServer(0)
 	if err != nil {

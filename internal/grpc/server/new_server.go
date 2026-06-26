@@ -50,6 +50,7 @@ func NewServer(port int) (*grpc.Server, net.Listener, error) {
 	}
 	pb.RegisterProcessManagerServer(s, handler)
 
+	handler.restoreState()
 	startScheduler(handler)
 
 	handler.logger.Info().Msgf("Serving GRPC server at %s", lis.Addr())

@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -39,13 +40,15 @@ func IsProcessRunning(pid int32) (*os.Process, bool) {
 
 // get pm2-go main directory
 func GetMainDirectory() string {
-	dirname, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	dirname := os.Getenv("PM2_GO_HOME")
+	if dirname == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		dirname = path.Join(home, ".pm2-go")
 	}
-	// add pm2-go directory
-	dirname = path.Join(dirname, ".pm2-go")
 
 	for _, directory := range []string{dirname, path.Join(dirname, "pids"), path.Join(dirname, "logs")} {
 		if err := os.MkdirAll(directory, 0755); err != nil {
@@ -231,7 +234,11 @@ func IsPortOpen(port int) bool {
 
 // get dump file path
 func GetDumpFilePath(filename string) string {
-	return os.Getenv("HOME") + "/.pm2-go/" + filename
+	return path.Join(GetMainDirectory(), filename)
+}
+
+func GetStateFilePath() string {
+	return path.Join(GetMainDirectory(), "state.json")
 }
 
 // dump the current processses to a file
@@ -290,4 +297,45 @@ func FileSize(filename string) int64 {
 		return 0
 	}
 	return info.Size()
+}
+
+func EnvironmentMap(environ []string) map[string]string {
+	environment := make(map[string]string, len(environ))
+	for _, item := range environ {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok || key == "" {
+			continue
+		}
+		environment[key] = value
+	}
+	return environment
+}
+
+func EnvironmentSlice(environment map[string]string) []string {
+	keys := make([]string, 0, len(environment))
+	for key := range environment {
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	environ := make([]string, 0, len(keys))
+	for _, key := range keys {
+		environ = append(environ, key+"="+environment[key])
+	}
+	return environ
+}
+
+func CloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }

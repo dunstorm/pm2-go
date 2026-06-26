@@ -20,6 +20,7 @@ PM2. Linux and macOS are supported; Windows is not currently supported.
 - Tail stdout and stderr logs
 - Auto-restart crashed processes
 - Restart processes on cron schedules
+- Restore online processes automatically when the daemon starts
 - Dump and restore process lists
 - Rotate logs by size and file count
 
@@ -57,7 +58,7 @@ make install
 From the repository root:
 
 ```sh
-pm2-go start python3 -u examples/test.py
+pm2-go start python3 examples/test.py
 pm2-go ls
 pm2-go describe python3
 pm2-go logs -l 50 python3
@@ -80,9 +81,12 @@ array or an object with an `apps` array.
 [
   {
     "name": "python-test",
-    "args": ["-u", "test.py"],
+    "args": ["test.py"],
     "autorestart": true,
     "cwd": "./examples",
+    "env": {
+      "APP_ENV": "production"
+    },
     "executable_path": "python3",
     "cron_restart": "* * * * *"
   }
@@ -106,8 +110,13 @@ Supported fields:
 | `executable_path` | Command or executable path to run. |
 | `args` | Arguments passed to the executable. |
 | `cwd` | Working directory for the process. |
+| `env` | Environment variables added to the spawned process. |
 | `autorestart` | Restart the process when it exits unexpectedly. |
 | `cron_restart` | Five-field cron expression for scheduled restarts. |
+
+Environment values are stored with process metadata for restart, dump, and
+daemon restore flows. Keep `$HOME/.pm2-go` private if you store sensitive
+values there.
 
 ## Commands
 
@@ -131,7 +140,9 @@ Supported fields:
 
 ## Daemon and Files
 
-PM2-GO stores runtime data under `$HOME/.pm2-go`:
+PM2-GO stores runtime data under `$HOME/.pm2-go` by default. Set
+`PM2_GO_HOME` to use a different runtime directory for isolated tests or
+side-by-side migrations.
 
 | Path | Purpose |
 | --- | --- |
@@ -139,6 +150,7 @@ PM2-GO stores runtime data under `$HOME/.pm2-go`:
 | `pids/` | Managed process PID files. |
 | `logs/` | Process stdout and stderr logs. |
 | `config.json` | Local PM2-GO configuration. |
+| `state.json` | Automatically persisted online processes restored on daemon start. |
 | `*.json` | Dump files created by `pm2-go dump`. |
 
 You can start the daemon explicitly with:

@@ -136,6 +136,22 @@ wait_for_file_not_empty() {
 	fail "timed out waiting for file to contain data: $file"
 }
 
+wait_for_file_contains() {
+	local file="$1"
+	local needle="$2"
+	local timeout="${3:-10}"
+
+	for _ in $(seq 1 "$timeout"); do
+		if [[ -f "$file" ]] && grep -Fq "$needle" "$file"; then
+			return
+		fi
+		sleep 1
+	done
+
+	[[ -f "$file" ]] && cat "$file" >&2
+	fail "timed out waiting for $file to contain '$needle'"
+}
+
 wait_for_ls_contains() {
 	local name="$1"
 	local state="$2"
@@ -169,6 +185,20 @@ wait_for_daemon_log() {
 
 	[[ -f "$daemon_log" ]] && cat "$daemon_log" >&2
 	fail "timed out waiting for daemon log to contain '$needle'"
+}
+
+wait_for_pid_exit() {
+	local pid="$1"
+	local timeout="${2:-20}"
+
+	for _ in $(seq 1 "$timeout"); do
+		if ! kill -0 "$pid" >/dev/null 2>&1; then
+			return
+		fi
+		sleep 0.1
+	done
+
+	fail "timed out waiting for pid $pid to exit"
 }
 
 capture_logs_for() {
@@ -208,6 +238,37 @@ write_cron_ecosystem() {
     "cwd": ".",
     "executable_path": "python3",
     "cron_restart": "* * * * *"
+  }
+]
+JSON
+}
+
+write_state_restore_ecosystem() {
+	cat >"$TMP_HOME/state-restore.json" <<'JSON'
+[
+  {
+    "name": "state-restore",
+    "args": ["-c", "import time; time.sleep(30)"],
+    "autorestart": false,
+    "cwd": ".",
+    "executable_path": "python3"
+  }
+]
+JSON
+}
+
+write_env_ecosystem() {
+	cat >"$TMP_HOME/env.json" <<'JSON'
+[
+  {
+    "name": "env-test",
+    "args": ["-c", "import os, time; print(os.environ.get('PM2_GO_E2E_ENV')); time.sleep(20)"],
+    "autorestart": false,
+    "cwd": ".",
+    "env": {
+      "PM2_GO_E2E_ENV": "ecosystem-value"
+    },
+    "executable_path": "python3"
   }
 ]
 JSON
@@ -333,6 +394,25 @@ assert_contains "$delete_all_output" "python-test"
 empty_ls="$(run_pm2 ls)"
 assert_not_contains "$empty_ls" "python-test"
 
+log "automatic state restore after daemon crash"
+write_state_restore_ecosystem
+run_pm2 start "$TMP_HOME/state-restore.json" >/dev/null
+state_restore_ls="$(wait_for_ls_contains "state-restore" "online")"
+assert_parent_is_daemon "$state_restore_ls" "state-restore"
+[[ -s "$TMP_HOME/.pm2-go/state.json" ]] || fail "expected state file to exist"
+
+daemon_pid="$(cat "$TMP_HOME/.pm2-go/daemon.pid")"
+state_restore_pid="$(cat "$TMP_HOME/.pm2-go/pids/state-restore.pid")"
+kill -9 "$daemon_pid"
+wait_for_pid_exit "$daemon_pid"
+kill "$state_restore_pid" >/dev/null 2>&1 || true
+wait_for_pid_exit "$state_restore_pid"
+
+state_restored_ls="$(wait_for_ls_contains "state-restore" "online")"
+assert_line_count "$state_restored_ls" "state-restore" 1
+assert_parent_is_daemon "$state_restored_ls" "state-restore"
+run_pm2 delete state-restore >/dev/null
+
 log "missing process errors"
 assert_contains "$(capture_pm2 stop missing-process)" "not found"
 assert_contains "$(capture_pm2 delete missing-process)" "not found"
@@ -343,6 +423,13 @@ assert_contains "$(capture_pm2 logs missing-process)" "not found"
 unknown_output="$(assert_command_fails definitely-not-a-command)"
 assert_contains "$unknown_output" "unknown command"
 
+log "ecosystem environment"
+write_env_ecosystem
+run_pm2 start "$TMP_HOME/env.json" >/dev/null
+env_log="$TMP_HOME/.pm2-go/logs/env-test-out.log"
+wait_for_file_contains "$env_log" "ecosystem-value" 10
+run_pm2 delete env-test >/dev/null
+
 log "autorestart crashed process"
 write_autorestart_ecosystem
 run_pm2 start "$TMP_HOME/autorestart.json" >/dev/null
@@ -352,10 +439,22 @@ assert_contains "$autorestart_ls" "autorestart-test"
 run_pm2 delete autorestart-test >/dev/null
 
 log "direct command"
-run_pm2 start -- python3 -c 'import time; time.sleep(20)' >/dev/null
+mkdir -p "$TMP_HOME/direct-cwd"
+cat >"$TMP_HOME/direct-cwd/direct.py" <<'PY'
+import os
+import time
+
+print(os.environ.get("PM2_GO_DIRECT_ENV"))
+print(os.getcwd())
+time.sleep(20)
+PY
+(cd "$TMP_HOME/direct-cwd" && PM2_GO_DIRECT_ENV=direct-value HOME="$TMP_HOME" "$BIN" start -- python3 direct.py >/dev/null)
 direct_ls="$(wait_for_ls_contains "python3" "online")"
 assert_line_count "$direct_ls" "python3" 1
 assert_parent_is_daemon "$direct_ls" "python3"
+direct_log="$TMP_HOME/.pm2-go/logs/python3-out.log"
+wait_for_file_contains "$direct_log" "direct-value" 10
+wait_for_file_contains "$direct_log" "$TMP_HOME/direct-cwd" 10
 
 log "delete direct command"
 run_pm2 delete all >/dev/null

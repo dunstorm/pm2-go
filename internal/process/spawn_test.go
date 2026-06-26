@@ -79,3 +79,53 @@ func TestFillDefaultsSanitizesFileNames(t *testing.T) {
 		t.Fatalf("expected pid file %q, got %q", expectedPidFile, params.PidPilePath)
 	}
 }
+
+func TestIsPythonExecutable(t *testing.T) {
+	tests := []struct {
+		name           string
+		executablePath string
+		want           bool
+	}{
+		{name: "python", executablePath: "python", want: true},
+		{name: "python3", executablePath: "python3", want: true},
+		{name: "python versioned", executablePath: "/usr/local/bin/python3.12", want: true},
+		{name: "python config helper", executablePath: "python3-config", want: false},
+		{name: "not python", executablePath: "node", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isPythonExecutable(tt.executablePath); got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestCommandEnvironmentAddsPythonUnbufferedDefault(t *testing.T) {
+	environ := commandEnvironment([]string{"PATH=/bin"}, nil, true)
+	env := utils.EnvironmentMap(environ)
+
+	if env["PYTHONUNBUFFERED"] != "1" {
+		t.Fatalf("expected PYTHONUNBUFFERED=1, got %q", env["PYTHONUNBUFFERED"])
+	}
+}
+
+func TestCommandEnvironmentAppliesOverrides(t *testing.T) {
+	environ := commandEnvironment(
+		[]string{"PATH=/bin", "APP_ENV=base", "PYTHONUNBUFFERED=1"},
+		map[string]string{
+			"APP_ENV":          "override",
+			"PYTHONUNBUFFERED": "0",
+		},
+		true,
+	)
+	env := utils.EnvironmentMap(environ)
+
+	if env["APP_ENV"] != "override" {
+		t.Fatalf("expected APP_ENV override, got %q", env["APP_ENV"])
+	}
+	if env["PYTHONUNBUFFERED"] != "0" {
+		t.Fatalf("expected explicit PYTHONUNBUFFERED override, got %q", env["PYTHONUNBUFFERED"])
+	}
+}
