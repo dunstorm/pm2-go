@@ -297,6 +297,14 @@ log "status before daemon"
 status_output="$(capture_pm2 status)"
 assert_contains "$status_output" "PM2 Daemon Not Running"
 
+log "isolated daemon environment"
+PM2_GO_DAEMON_ONLY=daemon-only run_pm2 -d >/dev/null
+run_pm2 start -- python3 -c 'import os, time; print("daemon-env=" + str(os.environ.get("PM2_GO_DAEMON_ONLY"))); time.sleep(20)' >/dev/null
+isolated_log="$TMP_HOME/.pm2-go/logs/python3-out.log"
+wait_for_file_contains "$isolated_log" "daemon-env=None" 10
+run_pm2 delete all >/dev/null
+run_pm2 kill >/dev/null
+
 log "start ecosystem"
 run_pm2 start examples/ecosystem.json >/dev/null
 sleep 1

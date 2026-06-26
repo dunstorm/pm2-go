@@ -114,9 +114,11 @@ Supported fields:
 | `autorestart` | Restart the process when it exits unexpectedly. |
 | `cron_restart` | Five-field cron expression for scheduled restarts. |
 
-Environment values are stored with process metadata for restart, dump, and
-daemon restore flows. Keep `$HOME/.pm2-go` private if you store sensitive
-values there.
+PM2-GO stores a complete environment with process metadata for restart, dump,
+and daemon restore flows. Direct commands use the shell environment from
+`pm2-go start`. JSON ecosystem files use the shell environment as a base and
+let the file's `env` values override matching keys. Keep `$HOME/.pm2-go`
+private if you store sensitive values there.
 
 To update a running process with the current shell environment, restart with
 `--update-env`:
@@ -125,8 +127,8 @@ To update a running process with the current shell environment, restart with
 APP_ENV=production pm2-go restart api --update-env
 ```
 
-For JSON ecosystem files, `--update-env` uses the current shell environment as
-the base and lets the file's `env` values override matching keys.
+For JSON ecosystem files, `--update-env` refreshes that shell environment base
+and still lets the file's `env` values override matching keys.
 
 ## Commands
 

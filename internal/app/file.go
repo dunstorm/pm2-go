@@ -47,10 +47,14 @@ func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) 
 	if err != nil {
 		return err
 	}
+	baseEnv := options.Env
+	if baseEnv == nil {
+		baseEnv = utils.EnvironmentMap(os.Environ())
+	}
 
 	for _, p := range payload {
 		process := app.FindProcess(p.Name)
-		env := utils.MergeStringMaps(options.Env, p.Env)
+		env := utils.MergeStringMaps(baseEnv, p.Env)
 		if process == nil {
 			app.SpawnProcess(SpawnParams{
 				Name:           p.Name,

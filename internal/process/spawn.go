@@ -98,18 +98,18 @@ func isPythonExecutable(executablePath string) bool {
 
 func commandEnvironment(base []string, overrides map[string]string, pythonExecutable bool) []string {
 	environment := utils.EnvironmentMap(base)
+	if overrides != nil {
+		environment = utils.CloneStringMap(overrides)
+		if environment == nil {
+			environment = make(map[string]string)
+		}
+	}
 	if pythonExecutable {
 		if _, hasOverride := overrides["PYTHONUNBUFFERED"]; !hasOverride {
 			if _, exists := environment["PYTHONUNBUFFERED"]; !exists {
 				environment["PYTHONUNBUFFERED"] = "1"
 			}
 		}
-	}
-	for key, value := range overrides {
-		if key == "" {
-			continue
-		}
-		environment[key] = value
 	}
 	return utils.EnvironmentSlice(environment)
 }
