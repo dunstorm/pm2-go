@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,10 +18,45 @@ import (
 type fakeProcessSource struct {
 	processes []*pb.Process
 	err       error
+	actionErr error
 }
 
 func (source fakeProcessSource) ListProcesses(ctx context.Context) ([]*pb.Process, error) {
 	return source.processes, source.err
+}
+
+func (source fakeProcessSource) FindProcess(ctx context.Context, id int32) (*pb.Process, error) {
+	if source.err != nil {
+		return nil, source.err
+	}
+	for _, process := range source.processes {
+		if process != nil && process.Id == id {
+			return process, nil
+		}
+	}
+	return nil, errors.New("not found")
+}
+
+func (source fakeProcessSource) StopProcess(ctx context.Context, id int32) (bool, error) {
+	return source.actionResult()
+}
+
+func (source fakeProcessSource) RestartProcess(ctx context.Context, process *pb.Process, graceful bool) (*pb.Process, error) {
+	if source.actionErr != nil {
+		return nil, source.actionErr
+	}
+	return process, nil
+}
+
+func (source fakeProcessSource) DeleteProcess(ctx context.Context, id int32) (bool, error) {
+	return source.actionResult()
+}
+
+func (source fakeProcessSource) actionResult() (bool, error) {
+	if source.actionErr != nil {
+		return false, source.actionErr
+	}
+	return true, nil
 }
 
 func TestAPIRequiresAuth(t *testing.T) {
@@ -95,15 +131,113 @@ func TestLoginRejectsInvalidToken(t *testing.T) {
 
 func TestDaemonUnavailableReturnsServiceUnavailable(t *testing.T) {
 	server := newTestServer(t, fakeProcessSource{err: errors.New("unavailable")})
-	cookie := loginCookie(t, server)
+	cookies := loginCookies(t, server)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/processes", nil)
-	request.AddCookie(cookie)
+	addCookies(request, cookies)
 	server.Handler().ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", recorder.Code)
+	}
+}
+
+func TestActionRequiresCSRF(t *testing.T) {
+	server := newTestServer(t, fakeProcessSource{processes: []*pb.Process{testProcess()}})
+	cookies := loginCookies(t, server)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/processes/1/actions", strings.NewReader(`{"action":"stop"}`))
+	request.Header.Set("Content-Type", "application/json")
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", recorder.Code)
+	}
+}
+
+func TestActionWithCSRF(t *testing.T) {
+	server := newTestServer(t, fakeProcessSource{processes: []*pb.Process{testProcess()}})
+	cookies := loginCookies(t, server)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/processes/1/actions", strings.NewReader(`{"action":"stop"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", csrfFromCookies(t, cookies))
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"success":true`) {
+		t.Fatalf("expected success response, got %s", recorder.Body.String())
+	}
+}
+
+func TestReadOnlyRejectsAction(t *testing.T) {
+	server, err := NewServer(Config{
+		Host:     DefaultHost,
+		Port:     DefaultPort,
+		Token:    "secret",
+		ReadOnly: true,
+	}, fakeProcessSource{processes: []*pb.Process{testProcess()}})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	cookies := loginCookies(t, server)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/processes/1/actions", strings.NewReader(`{"action":"stop"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", csrfFromCookies(t, cookies))
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", recorder.Code)
+	}
+}
+
+func TestProcessMetrics(t *testing.T) {
+	server := newTestServer(t, fakeProcessSource{processes: []*pb.Process{testProcess()}})
+	cookies := loginCookies(t, server)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/processes/1/metrics", nil)
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"cpu":1.5`) {
+		t.Fatalf("expected CPU metric, got %s", recorder.Body.String())
+	}
+}
+
+func TestProcessLogs(t *testing.T) {
+	logFile := t.TempDir() + "/out.log"
+	if err := os.WriteFile(logFile, []byte("one\ntwo\nthree\n"), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	process := testProcess()
+	process.LogFilePath = logFile
+	server := newTestServer(t, fakeProcessSource{processes: []*pb.Process{process}})
+	cookies := loginCookies(t, server)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/processes/1/logs?stream=out&tail=2", nil)
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "one") || !strings.Contains(recorder.Body.String(), "three") {
+		t.Fatalf("expected last two log lines, got %s", recorder.Body.String())
 	}
 }
 
@@ -159,7 +293,7 @@ func newTestServer(t *testing.T, source fakeProcessSource) *Server {
 	return server
 }
 
-func loginCookie(t *testing.T, server *Server) *http.Cookie {
+func loginCookies(t *testing.T, server *Server) []*http.Cookie {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader("token=secret"))
@@ -172,7 +306,24 @@ func loginCookie(t *testing.T, server *Server) *http.Cookie {
 	if len(cookies) == 0 {
 		t.Fatal("expected session cookie")
 	}
-	return cookies[0]
+	return cookies
+}
+
+func addCookies(request *http.Request, cookies []*http.Cookie) {
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+	}
+}
+
+func csrfFromCookies(t *testing.T, cookies []*http.Cookie) string {
+	t.Helper()
+	for _, cookie := range cookies {
+		if cookie.Name == csrfCookieName {
+			return cookie.Value
+		}
+	}
+	t.Fatal("expected csrf cookie")
+	return ""
 }
 
 func testProcess() *pb.Process {

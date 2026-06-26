@@ -21,6 +21,7 @@ type Config struct {
 	Port        int
 	Token       string
 	AllowRemote bool
+	ReadOnly    bool
 	SessionTTL  time.Duration
 }
 

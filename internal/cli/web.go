@@ -41,6 +41,10 @@ var webCmd = &cobra.Command{
 		if err != nil {
 			logger.Fatal().Msg(err.Error())
 		}
+		readOnly, err := cmd.Flags().GetBool("read-only")
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
 		noDaemon, err := cmd.Flags().GetBool("no-daemon")
 		if err != nil {
 			logger.Fatal().Msg(err.Error())
@@ -62,6 +66,7 @@ var webCmd = &cobra.Command{
 			Port:        port,
 			Token:       token,
 			AllowRemote: allowRemote,
+			ReadOnly:    readOnly,
 		}, web.NewGRPCProcessSource(daemonPort))
 		if err != nil {
 			logger.Fatal().Msg(err.Error())
@@ -83,6 +88,7 @@ func init() {
 	webCmd.Flags().Int("port", web.DefaultPort, "Port for the web server")
 	webCmd.Flags().String("token", "", "Access token for the web UI; defaults to PM2_GO_WEB_TOKEN or a generated token")
 	webCmd.Flags().Bool("allow-remote", false, "Allow binding to a non-loopback host")
+	webCmd.Flags().Bool("read-only", false, "Disable lifecycle actions in the web UI")
 	webCmd.Flags().Bool("no-daemon", false, "Do not start the pm2-go daemon before serving")
 	webCmd.Flags().Int("daemon-port", web.DefaultDaemonPort, "Local pm2-go daemon gRPC port")
 }

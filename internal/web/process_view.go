@@ -1,6 +1,7 @@
 package web
 
 import (
+	"sort"
 	"time"
 
 	pb "github.com/dunstorm/pm2-go/proto"
@@ -21,9 +22,23 @@ type processView struct {
 	ExecutablePath    string   `json:"executable_path"`
 	Args              []string `json:"args"`
 	Cwd               string   `json:"cwd"`
+	LogFilePath       string   `json:"log_file_path"`
+	ErrFilePath       string   `json:"err_file_path"`
+	EnvKeys           []string `json:"env_keys"`
 	AutoRestart       bool     `json:"auto_restart"`
+	CronRestart       string   `json:"cron_restart,omitempty"`
+	MaxRestarts       int32    `json:"max_restarts,omitempty"`
+	MinUptimeMS       int32    `json:"min_uptime_ms,omitempty"`
+	RestartDelayMS    int32    `json:"restart_delay_ms,omitempty"`
+	BackoffDelayMS    int32    `json:"exp_backoff_restart_delay_ms,omitempty"`
+	MaxMemoryRestart  int64    `json:"max_memory_restart,omitempty"`
 	HealthConfigured  bool     `json:"health_configured"`
+	HealthCheckURL    string   `json:"health_check_url,omitempty"`
+	HealthIntervalMS  int32    `json:"health_check_interval_ms,omitempty"`
+	HealthTimeoutMS   int32    `json:"health_check_timeout_ms,omitempty"`
 	Watch             bool     `json:"watch"`
+	WatchPaths        []string `json:"watch_paths"`
+	WatchIntervalMS   int32    `json:"watch_interval_ms,omitempty"`
 	NextStartAt       string   `json:"next_start_at,omitempty"`
 	LastHealthCheckAt string   `json:"last_health_check_at,omitempty"`
 	LastWatchCheckAt  string   `json:"last_watch_check_at,omitempty"`
@@ -48,9 +63,23 @@ func newProcessView(process *pb.Process) processView {
 		ExecutablePath:    process.ExecutablePath,
 		Args:              append([]string(nil), process.Args...),
 		Cwd:               process.Cwd,
+		LogFilePath:       process.LogFilePath,
+		ErrFilePath:       process.ErrFilePath,
+		EnvKeys:           envKeys(process.Env),
 		AutoRestart:       process.AutoRestart,
+		CronRestart:       process.CronRestart,
+		MaxRestarts:       process.MaxRestarts,
+		MinUptimeMS:       process.MinUptimeMs,
+		RestartDelayMS:    process.RestartDelayMs,
+		BackoffDelayMS:    process.ExpBackoffRestartDelayMs,
+		MaxMemoryRestart:  process.MaxMemoryRestart,
 		HealthConfigured:  process.HealthCheckUrl != "",
+		HealthCheckURL:    process.HealthCheckUrl,
+		HealthIntervalMS:  process.HealthCheckIntervalMs,
+		HealthTimeoutMS:   process.HealthCheckTimeoutMs,
 		Watch:             process.Watch,
+		WatchPaths:        append([]string(nil), process.WatchPaths...),
+		WatchIntervalMS:   process.WatchIntervalMs,
 		NextStartAt:       timestampString(process.NextStartAt),
 		LastHealthCheckAt: timestampString(process.LastHealthCheckAt),
 		LastWatchCheckAt:  timestampString(process.LastWatchCheckAt),
@@ -96,4 +125,13 @@ func durationString(duration *durationpb.Duration) string {
 		return "0s"
 	}
 	return value.Round(time.Second).String()
+}
+
+func envKeys(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

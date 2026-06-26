@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>pm2-go Web</title>
+    <link rel="icon" href="/assets/favicon.svg">
     <link rel="stylesheet" href="/assets/app.css">
     <script src="/assets/app.js" defer></script>
   </head>
@@ -16,6 +17,10 @@
         </div>
         <div class="topbar-actions">
           <p id="last-updated" class="timestamp">Waiting for daemon</p>
+          <label class="toggle">
+            <input id="auto-refresh" type="checkbox" checked>
+            <span>Auto</span>
+          </label>
           <button id="refresh" class="button button-primary" type="button">Refresh</button>
           <form method="post" action="/auth/logout">
             <button class="button" type="submit">Sign out</button>
@@ -56,27 +61,109 @@
           </label>
         </section>
 
-        <section class="table-panel" aria-label="Process table">
-          <div id="error" class="notice notice-error" hidden></div>
-          <div id="empty" class="notice" hidden>No processes registered.</div>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">PID</th>
-                  <th scope="col">CPU</th>
-                  <th scope="col">Memory</th>
-                  <th scope="col">Uptime</th>
-                  <th scope="col">Restarts</th>
-                  <th scope="col">Command</th>
-                  <th scope="col">Policy</th>
-                </tr>
-              </thead>
-              <tbody id="process-rows"></tbody>
-            </table>
-          </div>
+        <section class="dashboard-grid">
+          <section class="table-panel" aria-label="Process table">
+            <div id="error" class="notice notice-error" hidden></div>
+            <div id="empty" class="notice" hidden>No processes registered.</div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">PID</th>
+                    <th scope="col">CPU</th>
+                    <th scope="col">Memory</th>
+                    <th scope="col">Uptime</th>
+                    <th scope="col">Restarts</th>
+                    <th scope="col">Policy</th>
+                  </tr>
+                </thead>
+                <tbody id="process-rows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside class="inspector" aria-label="Process details">
+            <div id="inspector-empty" class="empty-state">
+              <p class="eyebrow">Details</p>
+              <h2>Select a process</h2>
+            </div>
+
+            <div id="inspector-content" hidden>
+              <div class="inspector-header">
+                <div>
+                  <p class="eyebrow">Selected</p>
+                  <h2 id="detail-name">Process</h2>
+                  <p id="detail-command" class="muted-line"></p>
+                </div>
+                <span id="detail-status" class="status-pill">unknown</span>
+              </div>
+
+              <section class="actions-bar" aria-label="Lifecycle actions">
+                <button class="button" type="button" data-action="start">Start</button>
+                <button class="button" type="button" data-action="restart">Restart</button>
+                <button class="button" type="button" data-action="reload">Reload</button>
+                <button class="button" type="button" data-action="stop">Stop</button>
+                <button class="button button-danger" type="button" data-action="delete">Delete</button>
+              </section>
+
+              <section class="panel-section">
+                <div class="section-heading">
+                  <h3>Last hour</h3>
+                  <span id="metric-count" class="muted-line">0 samples</span>
+                </div>
+                <div class="chart-grid">
+                  <div>
+                    <div class="chart-label">CPU %</div>
+                    <canvas id="cpu-chart" width="360" height="120"></canvas>
+                  </div>
+                  <div>
+                    <div class="chart-label">Memory MB</div>
+                    <canvas id="memory-chart" width="360" height="120"></canvas>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel-section">
+                <div class="section-heading">
+                  <h3>Settings</h3>
+                  <button id="copy-config" class="small-button" type="button">Copy JSON</button>
+                </div>
+                <dl id="settings-list" class="settings-list"></dl>
+              </section>
+
+              <section class="panel-section">
+                <div class="section-heading">
+                  <h3>Logs</h3>
+                  <div class="inline-controls">
+                    <button class="small-button active" type="button" data-log-stream="out">stdout</button>
+                    <button class="small-button" type="button" data-log-stream="err">stderr</button>
+                  </div>
+                </div>
+                <div class="log-toolbar">
+                  <label class="toggle">
+                    <input id="log-live" type="checkbox" checked>
+                    <span>Live</span>
+                  </label>
+                  <label class="toggle">
+                    <input id="log-autoscroll" type="checkbox" checked>
+                    <span>Auto-scroll</span>
+                  </label>
+                  <input id="log-search" type="search" placeholder="Filter logs">
+                </div>
+                <pre id="log-viewer" class="log-viewer" aria-label="Process logs"></pre>
+              </section>
+
+              <section class="panel-section">
+                <div class="section-heading">
+                  <h3>Timeline</h3>
+                  <button id="events-refresh" class="small-button" type="button">Refresh</button>
+                </div>
+                <ul id="event-list" class="event-list"></ul>
+              </section>
+            </div>
+          </aside>
         </section>
       </main>
     </div>

@@ -185,6 +185,8 @@ Security defaults:
   not set.
 - Refuses non-loopback hosts unless `--allow-remote` is passed.
 - Keeps process environment variables out of the web API response.
+- Protects lifecycle actions with a session CSRF token.
+- Supports `--read-only` when you want monitoring without web actions.
 
 For a stable token:
 
@@ -199,9 +201,10 @@ token:
 PM2_GO_WEB_TOKEN="change-me" pm2-go web --host 0.0.0.0 --allow-remote
 ```
 
-The first web version is read-only: process list, status, PID, CPU, memory,
-uptime, restart counts, command, and policy flags. Lifecycle actions will be
-added behind the same auth boundary.
+The dashboard includes auto-refreshing process status, per-process last-hour
+CPU and memory charts, safe configuration details, stdout/stderr log tailing,
+an event timeline, and lifecycle actions for start, stop, restart, reload, and
+delete. Environment variable names are shown, but values stay redacted.
 
 ## Commands
 

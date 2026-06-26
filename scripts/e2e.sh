@@ -249,6 +249,7 @@ web_process_json() {
 	local port="$1"
 
 	python3 - "$port" <<'PY'
+from http.cookies import SimpleCookie
 import http.client
 import json
 import sys
@@ -268,11 +269,17 @@ body = urllib.parse.urlencode({"token": "web-e2e-token"})
 conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
 conn.request("POST", "/auth/login", body, {"Content-Type": "application/x-www-form-urlencoded"})
 resp = conn.getresponse()
-cookie = resp.getheader("Set-Cookie")
-if resp.status != 303 or not cookie:
+cookies = SimpleCookie()
+for header, value in resp.getheaders():
+    if header.lower() == "set-cookie":
+        cookies.load(value)
+if resp.status != 303 or "pm2_go_web_session" not in cookies or "pm2_go_web_csrf" not in cookies:
     raise SystemExit(f"expected login redirect with cookie, got {resp.status}")
 resp.read()
 conn.close()
+
+cookie = "; ".join(f"{morsel.key}={morsel.value}" for morsel in cookies.values())
+csrf = cookies["pm2_go_web_csrf"].value
 
 conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
 conn.request("GET", "/api/processes", headers={"Cookie": cookie})
@@ -281,6 +288,44 @@ payload = resp.read().decode()
 if resp.status != 200:
     raise SystemExit(f"expected authenticated API to return 200, got {resp.status}: {payload}")
 data = json.loads(payload)
+if not data.get("processes"):
+    raise SystemExit("expected at least one process")
+process = data["processes"][0]
+process_id = process["id"]
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("GET", f"/api/processes/{process_id}/metrics", headers={"Cookie": cookie})
+resp = conn.getresponse()
+metrics_payload = resp.read().decode()
+if resp.status != 200 or "points" not in metrics_payload:
+    raise SystemExit(f"expected metrics response, got {resp.status}: {metrics_payload}")
+conn.close()
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("GET", f"/api/processes/{process_id}/logs?stream=out&tail=5", headers={"Cookie": cookie})
+resp = conn.getresponse()
+logs_payload = resp.read().decode()
+if resp.status != 200 or "lines" not in logs_payload:
+    raise SystemExit(f"expected logs response, got {resp.status}: {logs_payload}")
+conn.close()
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request(
+    "POST",
+    f"/api/processes/{process_id}/actions",
+    json.dumps({"action": "restart"}),
+    {
+        "Content-Type": "application/json",
+        "Cookie": cookie,
+        "X-CSRF-Token": csrf,
+    },
+)
+resp = conn.getresponse()
+action_payload = resp.read().decode()
+if resp.status != 200 or '"success":true' not in action_payload:
+    raise SystemExit(f"expected restart action success, got {resp.status}: {action_payload}")
+conn.close()
+
 print(json.dumps(data, sort_keys=True))
 PY
 }

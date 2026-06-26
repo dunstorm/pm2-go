@@ -15,6 +15,7 @@ func main() {
 	token := flag.String("token", "", "Access token for the web UI; defaults to PM2_GO_WEB_TOKEN or a generated token")
 	daemonPort := flag.Int("daemon-port", web.DefaultDaemonPort, "Local pm2-go daemon gRPC port")
 	allowRemote := flag.Bool("allow-remote", false, "Allow binding to a non-loopback host")
+	readOnly := flag.Bool("read-only", false, "Disable lifecycle actions in the web UI")
 	flag.Parse()
 
 	webToken := *token
@@ -27,6 +28,7 @@ func main() {
 		Port:        *port,
 		Token:       webToken,
 		AllowRemote: *allowRemote,
+		ReadOnly:    *readOnly,
 	}, web.NewGRPCProcessSource(*daemonPort))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pm2-go-web: %v\n", err)
