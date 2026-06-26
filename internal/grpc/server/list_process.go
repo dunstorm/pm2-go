@@ -11,9 +11,6 @@ import (
 func (api *Handler) ListProcess(ctx context.Context, in *pb.ListProcessRequest) (*pb.ListProcessResponse, error) {
 	api.mu.Lock()
 	defer api.mu.Unlock()
-	for _, p := range api.databaseById {
-		p.UpdateCPUMemory()
-	}
 
 	// convert map to sorted slice
 	keys := make([]int32, len(api.databaseById))

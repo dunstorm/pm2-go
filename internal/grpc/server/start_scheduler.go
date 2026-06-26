@@ -16,11 +16,43 @@ func updateProcessMap(handler *Handler, processId int32, p *os.Process) {
 	handler.processes[processId] = p
 }
 
+const metricsRefreshInterval = 2 * time.Second
+
+func processMetricsDue(handler *Handler, processId int32) bool {
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+
+	lastUpdatedAt := handler.metricsUpdatedAt[processId]
+	return lastUpdatedAt.IsZero() || time.Since(lastUpdatedAt) >= metricsRefreshInterval
+}
+
+func refreshProcessMetrics(handler *Handler, p *pb.Process, force bool) (int64, error) {
+	if !force && !processMetricsDue(handler, p.Id) {
+		return 0, nil
+	}
+
+	stats, err := p.ReadCPUMemoryStats()
+	if err != nil {
+		return 0, err
+	}
+
+	handler.mu.Lock()
+	if current := handler.databaseById[p.Id]; current == p && current.ProcStatus != nil {
+		current.ProcStatus.Cpu = stats.CPU
+		current.ProcStatus.Memory = stats.Memory
+		handler.metricsUpdatedAt[p.Id] = time.Now()
+	}
+	handler.mu.Unlock()
+
+	return stats.MemoryBytes, nil
+}
+
 func restartProcess(handler *Handler, p *pb.Process) {
 	handler.logger.Info().Msgf("Restarting process %s", p.Name)
 	p.IncreaseRestarts()
 	p.RestartAt = nil
 	p.SetStopSignal(false)
+	delete(handler.metricsUpdatedAt, p.Id)
 	newProcess, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
 		Name:                     p.Name,
 		Args:                     p.Args,
@@ -154,23 +186,22 @@ func startScheduler(handler *Handler) {
 				p.UpdateStatus("stopped")
 				p.ResetCPUMemory()
 				updateProcessMap(handler, p.Id, nil)
+				delete(handler.metricsUpdatedAt, p.Id)
 
 				// restart process if auto restart is enabled and process is not stopped
 				handleAutoRestart(handler, p, uptime)
 				handler.persistStateLocked()
 			} else {
 				p.UpdateUptime()
-				if p.MaxMemoryRestart > 0 {
-					memory, err := p.UpdateCPUMemoryStats()
-					if err == nil && memory > p.MaxMemoryRestart {
-						handler.mu.Lock()
-						defer handler.mu.Unlock()
+				memory, err := refreshProcessMetrics(handler, p, p.MaxMemoryRestart > 0)
+				if p.MaxMemoryRestart > 0 && err == nil && memory > p.MaxMemoryRestart {
+					handler.mu.Lock()
+					defer handler.mu.Unlock()
 
-						handler.logger.Warn().Msgf("Process %s exceeded max_memory_restart=%d bytes", p.Name, p.MaxMemoryRestart)
-						restartLiveProcess(handler, p)
-						handler.persistStateLocked()
-						return
-					}
+					handler.logger.Warn().Msgf("Process %s exceeded max_memory_restart=%d bytes", p.Name, p.MaxMemoryRestart)
+					restartLiveProcess(handler, p)
+					handler.persistStateLocked()
+					return
 				}
 				if handleHealthCheck(handler, p) {
 					handler.mu.Lock()

@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/rs/zerolog"
@@ -18,8 +19,9 @@ type Handler struct {
 	databaseByName map[string]*pb.Process
 	mu             sync.Mutex
 
-	processes map[int32]*os.Process
-	nextId    int32
+	processes        map[int32]*os.Process
+	metricsUpdatedAt map[int32]time.Time
+	nextId           int32
 
 	pb.UnimplementedProcessManagerServer
 }
@@ -43,10 +45,11 @@ func NewServer(port int) (*grpc.Server, net.Listener, error) {
 	}
 	s := grpc.NewServer()
 	handler := &Handler{
-		logger:         &logger,
-		databaseById:   make(map[int32]*pb.Process, 0),
-		databaseByName: make(map[string]*pb.Process, 0),
-		processes:      make(map[int32]*os.Process, 0),
+		logger:           &logger,
+		databaseById:     make(map[int32]*pb.Process, 0),
+		databaseByName:   make(map[string]*pb.Process, 0),
+		processes:        make(map[int32]*os.Process, 0),
+		metricsUpdatedAt: make(map[int32]time.Time),
 	}
 	pb.RegisterProcessManagerServer(s, handler)
 
