@@ -105,6 +105,17 @@ assert_file_not_empty() {
 	[[ "$size" != "0" ]] || fail "expected $file to contain data"
 }
 
+assert_file_not_contains() {
+	local file="$1"
+	local needle="$2"
+
+	[[ -f "$file" ]] || fail "expected file to exist: $file"
+	if grep -Fq "$needle" "$file"; then
+		cat "$file" >&2
+		fail "expected $file not to contain '$needle'"
+	fi
+}
+
 assert_command_fails() {
 	local output
 	local status
@@ -245,6 +256,21 @@ write_restart_limit_ecosystem() {
 JSON
 }
 
+write_delayed_restart_ecosystem() {
+	cat >"$TMP_HOME/delayed-restart.json" <<'JSON'
+[
+  {
+    "name": "delayed-restart-test",
+    "args": ["-c", "import time, sys; time.sleep(0.1); sys.exit(2)"],
+    "autorestart": true,
+    "cwd": ".",
+    "executable_path": "python3",
+    "restart_delay": 2000
+  }
+]
+JSON
+}
+
 write_memory_restart_ecosystem() {
 	cat >"$TMP_HOME/memory-restart.json" <<'JSON'
 [
@@ -289,7 +315,6 @@ write_watch_ecosystem() {
     "cwd": "$TMP_HOME/watch-cwd",
     "executable_path": "python3",
     "watch": true,
-    "watch_paths": ["watched.txt"],
     "watch_interval": 500
   }
 ]
@@ -523,6 +548,10 @@ run_pm2 start "$TMP_HOME/env.json" >/dev/null
 env_log="$TMP_HOME/.pm2-go/logs/env-test-out.log"
 wait_for_file_contains "$env_log" "ecosystem-value" 10
 run_pm2 flush env-test >/dev/null
+PM2_GO_E2E_ENV=caller-value PM2_GO_E2E_CALLER_ENV=no-update run_pm2 restart "$TMP_HOME/env.json" >/dev/null
+wait_for_file_contains "$env_log" "ecosystem-value" 10
+assert_file_not_contains "$env_log" "no-update"
+run_pm2 flush env-test >/dev/null
 PM2_GO_E2E_ENV=caller-value PM2_GO_E2E_CALLER_ENV=caller-only run_pm2 restart "$TMP_HOME/env.json" --update-env --env production >/dev/null
 wait_for_file_contains "$env_log" "production-value" 10
 wait_for_file_contains "$env_log" "caller-only" 10
@@ -546,10 +575,26 @@ restart_limit_ls="$(wait_for_ls_contains "restart-limit-test" "errored" 15)"
 assert_contains "$restart_limit_ls" "restart-limit-test"
 run_pm2 delete restart-limit-test >/dev/null
 
+log "manual stop cancels delayed autorestart"
+write_delayed_restart_ecosystem
+run_pm2 start "$TMP_HOME/delayed-restart.json" >/dev/null
+wait_for_daemon_log "Scheduling restart for process delayed-restart-test" 15
+run_pm2 stop delayed-restart-test >/dev/null
+sleep 3
+delayed_restart_ls="$(run_pm2 ls)"
+assert_contains "$delayed_restart_ls" "delayed-restart-test"
+assert_contains "$delayed_restart_ls" "stopped"
+assert_not_contains "$delayed_restart_ls" "online"
+run_pm2 delete delayed-restart-test >/dev/null
+
 log "memory restart"
 write_memory_restart_ecosystem
 run_pm2 start "$TMP_HOME/memory-restart.json" >/dev/null
+memory_old_pid="$(cat "$TMP_HOME/.pm2-go/pids/memory-restart-test.pid")"
 wait_for_daemon_log "Process memory-restart-test exceeded max_memory_restart=1048576 bytes" 15
+memory_new_pid="$(cat "$TMP_HOME/.pm2-go/pids/memory-restart-test.pid")"
+[[ "$memory_new_pid" != "$memory_old_pid" ]] || fail "expected memory restart to replace pid $memory_old_pid"
+wait_for_pid_exit "$memory_old_pid" 20
 memory_restart_ls="$(wait_for_ls_contains "memory-restart-test" "online" 15)"
 assert_contains "$memory_restart_ls" "memory-restart-test"
 run_pm2 delete memory-restart-test >/dev/null
@@ -557,18 +602,25 @@ run_pm2 delete memory-restart-test >/dev/null
 log "health check status"
 write_health_check_ecosystem
 run_pm2 start "$TMP_HOME/health-check.json" >/dev/null
+health_pid="$(cat "$TMP_HOME/.pm2-go/pids/health-check-test.pid")"
 health_ls="$(wait_for_ls_contains "health-check-test" "unhealthy" 15)"
 assert_contains "$health_ls" "health-check-test"
-run_pm2 delete health-check-test >/dev/null
+kill_output="$(capture_pm2 kill)"
+assert_contains "$kill_output" "PM2 Daemon Stopped"
+wait_for_pid_exit "$health_pid" 20
 
 log "watch restart"
 write_watch_ecosystem
 run_pm2 start "$TMP_HOME/watch.json" >/dev/null
 watch_ls="$(wait_for_ls_contains "watch-test" "online" 10)"
 assert_contains "$watch_ls" "watch-test"
+watch_old_pid="$(cat "$TMP_HOME/.pm2-go/pids/watch-test.pid")"
 sleep 2
 printf 'changed\n' >>"$TMP_HOME/watch-cwd/watched.txt"
 wait_for_daemon_log "Watched files changed for process watch-test" 15
+watch_new_pid="$(cat "$TMP_HOME/.pm2-go/pids/watch-test.pid")"
+[[ "$watch_new_pid" != "$watch_old_pid" ]] || fail "expected watch restart to replace pid $watch_old_pid"
+wait_for_pid_exit "$watch_old_pid" 20
 watch_restarted_ls="$(wait_for_ls_contains "watch-test" "online" 15)"
 assert_contains "$watch_restarted_ls" "watch-test"
 run_pm2 delete watch-test >/dev/null

@@ -67,6 +67,28 @@ func restartProcess(handler *Handler, p *pb.Process) {
 	go process.Wait()
 }
 
+func restartLiveProcess(handler *Handler, p *pb.Process) {
+	found := handler.processes[p.Id]
+	if found == nil && p.Pid != 0 {
+		if process, running := utils.GetProcess(p.Pid); running {
+			found = process
+		}
+	}
+	if found != nil {
+		if err := found.Kill(); err != nil {
+			handler.logger.Warn().Err(err).Msgf("Failed to stop process %s before restart", p.Name)
+		}
+	}
+
+	p.SetStatus("stopped")
+	p.ResetCPUMemory()
+	p.SetStopSignal(true)
+	p.ResetPid()
+	updateProcessMap(handler, p.Id, nil)
+
+	restartProcess(handler, p)
+}
+
 func nextAutoRestartDelay(p *pb.Process) time.Duration {
 	if p.ExpBackoffRestartDelayMs > 0 {
 		if p.CurrentRestartDelayMs <= 0 {
@@ -119,6 +141,8 @@ func startScheduler(handler *Handler) {
 
 	// sync process
 	syncProcess := func(p *pb.Process) {
+		defer wg.Done()
+
 		if isRunningState(p.ProcStatus.Status) {
 			if _, ok := utils.IsProcessRunning(p.Pid); !ok {
 				handler.mu.Lock()
@@ -143,8 +167,9 @@ func startScheduler(handler *Handler) {
 						defer handler.mu.Unlock()
 
 						handler.logger.Warn().Msgf("Process %s exceeded max_memory_restart=%d bytes", p.Name, p.MaxMemoryRestart)
-						restartProcess(handler, p)
+						restartLiveProcess(handler, p)
 						handler.persistStateLocked()
+						return
 					}
 				}
 				if handleHealthCheck(handler, p) {
@@ -154,15 +179,21 @@ func startScheduler(handler *Handler) {
 				}
 				if handleWatch(handler, p) {
 					handler.mu.Lock()
-					restartProcess(handler, p)
+					restartLiveProcess(handler, p)
 					handler.persistStateLocked()
 					handler.mu.Unlock()
+					return
 				}
 			}
 		} else if p.RestartAt != nil && p.RestartAt.AsTime().Before(time.Now()) {
 			handler.mu.Lock()
 			defer handler.mu.Unlock()
 
+			if p.GetStopSignal() {
+				p.RestartAt = nil
+				handler.persistStateLocked()
+				return
+			}
 			p.RestartAt = nil
 			restartProcess(handler, p)
 			handler.persistStateLocked()
@@ -175,7 +206,6 @@ func startScheduler(handler *Handler) {
 			p.UpdateNextStartAt()
 			handler.persistStateLocked()
 		}
-		wg.Done()
 	}
 
 	// read config

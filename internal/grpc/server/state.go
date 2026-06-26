@@ -89,7 +89,7 @@ func (api *Handler) persistedProcessesLocked() []persistedProcess {
 func shouldPersistProcess(process *pb.Process) bool {
 	return process != nil &&
 		process.ProcStatus != nil &&
-		process.ProcStatus.Status == "online" &&
+		isRunningState(process.ProcStatus.Status) &&
 		process.Pid != 0 &&
 		!process.StopSignal
 }

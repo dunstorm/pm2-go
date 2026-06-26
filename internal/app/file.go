@@ -63,6 +63,7 @@ func (data *Data) UnmarshalJSON(content []byte) error {
 type StartFileOptions struct {
 	Env           map[string]string
 	EnvName       string
+	UseCurrentEnv bool
 	Graceful      bool
 	Signal        string
 	KillTimeoutMS int32
@@ -84,7 +85,7 @@ func readFileJson(filePath string) ([]Data, error) {
 }
 
 func (app *App) StartFile(filePath string) error {
-	return app.StartFileWithOptions(filePath, StartFileOptions{})
+	return app.StartFileWithOptions(filePath, StartFileOptions{UseCurrentEnv: true})
 }
 
 func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) error {
@@ -92,13 +93,17 @@ func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) 
 	if err != nil {
 		return err
 	}
-	baseEnv := options.Env
-	if baseEnv == nil {
-		baseEnv = utils.EnvironmentMap(os.Environ())
-	}
 
 	for _, p := range payload {
 		process := app.FindProcess(p.Name)
+		baseEnv := options.Env
+		if baseEnv == nil {
+			if process != nil && !options.UseCurrentEnv {
+				baseEnv = process.Env
+			} else {
+				baseEnv = utils.EnvironmentMap(os.Environ())
+			}
+		}
 		env := utils.MergeStringMaps(baseEnv, p.Env)
 		if options.EnvName != "" {
 			env = utils.MergeStringMaps(env, p.EnvProfiles[options.EnvName])
@@ -126,7 +131,7 @@ func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) 
 			})
 		} else {
 			restartProcess := processFromData(process.Id, p, env)
-			if process.ProcStatus.Status == "online" {
+			if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 				app.RestartProcessWithOptions(restartProcess, RestartOptions{
 					Graceful:      options.Graceful,
@@ -157,7 +162,7 @@ func (app *App) StopFile(filePath string) error {
 		if process == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
-			if process.ProcStatus.Status == "online" {
+			if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 				app.logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 				app.StopProcess(process.Id)
 			} else {
@@ -179,7 +184,7 @@ func (app *App) DeleteFile(filePath string) error {
 		if process == nil {
 			app.logger.Warn().Msgf("App [%s] not found", p.Name)
 		} else {
-			if process.ProcStatus.Status == "online" {
+			if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 				app.logger.Info().Msgf("Applying action stopProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 				app.StopProcess(process.Id)
 			}
@@ -234,7 +239,7 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 				WatchIntervalMS:          p.WatchIntervalMs,
 			})
 		} else {
-			if process.ProcStatus.Status == "online" {
+			if process.ProcStatus != nil && isRunningStatus(process.ProcStatus.Status) {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 			} else {
 				app.logger.Info().Msgf("Applying action startProcessId on app [%s]", process.Name)
@@ -263,6 +268,10 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 			})
 		}
 	}
+}
+
+func isRunningStatus(status string) bool {
+	return status == "online" || status == "unhealthy"
 }
 
 func processFromData(id int32, data Data, env map[string]string) *pb.Process {

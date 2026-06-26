@@ -170,6 +170,19 @@ func TestRestoreStateSpawnsPersistedProcesses(t *testing.T) {
 	}
 }
 
+func TestShouldPersistUnhealthyRunningProcess(t *testing.T) {
+	process := &pb.Process{
+		Pid: 123,
+		ProcStatus: &pb.ProcStatus{
+			Status: "unhealthy",
+		},
+	}
+
+	if !shouldPersistProcess(process) {
+		t.Fatal("expected unhealthy live process to be persisted")
+	}
+}
+
 func readPersistedState(t *testing.T) []persistedProcess {
 	t.Helper()
 

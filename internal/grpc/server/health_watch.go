@@ -1,6 +1,9 @@
 package server
 
 import (
+	"fmt"
+	"hash/fnv"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -92,7 +95,36 @@ func watchSignature(path string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return info.ModTime().UnixNano() + info.Size(), nil
+
+	hash := fnv.New64a()
+	addSignature := func(name string, info fs.FileInfo) {
+		_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00%s\x00", name, info.ModTime().UnixNano(), info.Size(), info.Mode().String())
+	}
+
+	if !info.IsDir() {
+		addSignature(path, info)
+		return int64(hash.Sum64()), nil
+	}
+
+	err = filepath.WalkDir(path, func(entryPath string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		entryInfo, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		relativePath, err := filepath.Rel(path, entryPath)
+		if err != nil {
+			relativePath = entryPath
+		}
+		addSignature(relativePath, entryInfo)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int64(hash.Sum64()), nil
 }
 
 func handleWatch(handler *Handler, p *pb.Process) bool {

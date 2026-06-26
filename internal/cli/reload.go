@@ -65,6 +65,7 @@ var reloadCmd = &cobra.Command{
 			err = master.StartFileWithOptions(args[0], app.StartFileOptions{
 				Env:           env,
 				EnvName:       envName,
+				UseCurrentEnv: updateEnv,
 				Graceful:      true,
 				Signal:        signalName,
 				KillTimeoutMS: killTimeout,
