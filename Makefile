@@ -2,14 +2,19 @@ DOCKER ?= docker
 E2E_IMAGE ?= pm2-go-e2e
 BENCHMARK_IMAGE ?= pm2-go-benchmark
 
-.PHONY: protoc build install daemon test/quick/start test/quick/stop ls kill logs test test/e2e test/e2e/slow test/e2e/docker test/e2e/docker/slow benchmark benchmark/docker dump restore flush
+.PHONY: protoc build build/cli build/web install daemon test/quick/start test/quick/stop ls kill logs test test/e2e test/e2e/slow test/e2e/docker test/e2e/docker/slow benchmark benchmark/docker dump restore flush
 
 protoc:
 	@echo "Generating Go files"
 	cd proto && protoc --go_out=. --go-grpc_out=. *.proto
 
-build:
+build: build/cli build/web
+
+build/cli:
 	go build -o bin/pm2-go ./cmd/pm2-go
+
+build/web:
+	go build -o bin/pm2-go-web ./cmd/pm2-go-web
 
 install:
 	go install ./cmd/pm2-go

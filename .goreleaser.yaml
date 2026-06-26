@@ -6,7 +6,17 @@ before:
     - go generate ./...
 
 builds:
-  - main: ./cmd/pm2-go
+  - id: pm2-go
+    main: ./cmd/pm2-go
+    binary: pm2-go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+  - id: pm2-go-web
+    main: ./cmd/pm2-go-web
+    binary: pm2-go-web
     env:
       - CGO_ENABLED=0
     goos:

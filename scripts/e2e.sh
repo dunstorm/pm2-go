@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_HOME="$(mktemp -d)"
 BIN="$TMP_HOME/bin/pm2-go"
 E2E_SLOW="${E2E_SLOW:-0}"
+WEB_PID=""
 
 log() {
 	printf '== %s ==\n' "$*" >&2
@@ -212,6 +213,78 @@ wait_for_pid_exit() {
 	fail "timed out waiting for pid $pid to exit"
 }
 
+free_port() {
+	python3 - <<'PY'
+import socket
+
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+}
+
+wait_for_web() {
+	local port="$1"
+
+	for _ in $(seq 1 30); do
+		if python3 - "$port" <<'PY' >/dev/null 2>&1
+import http.client
+import sys
+
+conn = http.client.HTTPConnection("127.0.0.1", int(sys.argv[1]), timeout=1)
+conn.request("GET", "/login")
+resp = conn.getresponse()
+sys.exit(0 if resp.status == 200 else 1)
+PY
+		then
+			return
+		fi
+		sleep 0.2
+	done
+
+	fail "timed out waiting for web dashboard on port $port"
+}
+
+web_process_json() {
+	local port="$1"
+
+	python3 - "$port" <<'PY'
+import http.client
+import json
+import sys
+import urllib.parse
+
+port = int(sys.argv[1])
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("GET", "/api/processes")
+resp = conn.getresponse()
+if resp.status != 401:
+    raise SystemExit(f"expected unauthenticated API to return 401, got {resp.status}")
+resp.read()
+conn.close()
+
+body = urllib.parse.urlencode({"token": "web-e2e-token"})
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("POST", "/auth/login", body, {"Content-Type": "application/x-www-form-urlencoded"})
+resp = conn.getresponse()
+cookie = resp.getheader("Set-Cookie")
+if resp.status != 303 or not cookie:
+    raise SystemExit(f"expected login redirect with cookie, got {resp.status}")
+resp.read()
+conn.close()
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("GET", "/api/processes", headers={"Cookie": cookie})
+resp = conn.getresponse()
+payload = resp.read().decode()
+if resp.status != 200:
+    raise SystemExit(f"expected authenticated API to return 200, got {resp.status}: {payload}")
+data = json.loads(payload)
+print(json.dumps(data, sort_keys=True))
+PY
+}
+
 capture_logs_for() {
 	local name="$1"
 	local output_file="$TMP_HOME/logs-$name.out"
@@ -373,6 +446,10 @@ JSON
 
 cleanup() {
 	set +e
+	if [[ -n "$WEB_PID" ]]; then
+		kill "$WEB_PID" >/dev/null 2>&1 || true
+		wait "$WEB_PID" >/dev/null 2>&1 || true
+	fi
 	if [[ -x "$BIN" ]]; then
 		HOME="$TMP_HOME" "$BIN" delete all >/dev/null 2>&1
 		HOME="$TMP_HOME" "$BIN" kill >/dev/null 2>&1
@@ -409,6 +486,20 @@ sleep 1
 ecosystem_ls="$(wait_for_ls_contains "python-test" "online")"
 assert_line_count "$ecosystem_ls" "python-test" 1
 assert_parent_is_daemon "$ecosystem_ls" "python-test"
+
+log "web dashboard"
+web_port="$(free_port)"
+web_log="$TMP_HOME/web.log"
+PM2_GO_WEB_TOKEN=web-e2e-token HOME="$TMP_HOME" "$BIN" web --port "$web_port" >"$web_log" 2>&1 &
+WEB_PID=$!
+wait_for_web "$web_port"
+web_json="$(web_process_json "$web_port")"
+assert_contains "$web_json" '"name": "python-test"'
+assert_contains "$web_json" '"status": "online"'
+assert_not_contains "$web_json" '"env"'
+kill "$WEB_PID" >/dev/null 2>&1 || true
+wait "$WEB_PID" >/dev/null 2>&1 || true
+WEB_PID=""
 
 log "status after daemon start"
 status_output="$(capture_pm2 status)"

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pm2-go Web</title>
+    <link rel="stylesheet" href="/assets/app.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">pm2-go</p>
+          <h1>Processes</h1>
+        </div>
+        <div class="topbar-actions">
+          <p id="last-updated" class="timestamp">Waiting for daemon</p>
+          <button id="refresh" class="button button-primary" type="button">Refresh</button>
+          <form method="post" action="/auth/logout">
+            <button class="button" type="submit">Sign out</button>
+          </form>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="summary-strip" aria-label="Process summary">
+          <div>
+            <span class="summary-label">Total</span>
+            <strong id="total-count">0</strong>
+          </div>
+          <div>
+            <span class="summary-label">Online</span>
+            <strong id="online-count">0</strong>
+          </div>
+          <div>
+            <span class="summary-label">Unhealthy</span>
+            <strong id="unhealthy-count">0</strong>
+          </div>
+          <div>
+            <span class="summary-label">Stopped</span>
+            <strong id="stopped-count">0</strong>
+          </div>
+        </section>
+
+        <section class="toolbar" aria-label="Process filters">
+          <div class="segmented" role="tablist" aria-label="Status filter">
+            <button class="segment active" type="button" data-filter="all">All</button>
+            <button class="segment" type="button" data-filter="online">Online</button>
+            <button class="segment" type="button" data-filter="unhealthy">Unhealthy</button>
+            <button class="segment" type="button" data-filter="stopped">Stopped</button>
+          </div>
+          <label class="search-label">
+            <span>Search</span>
+            <input id="search" type="search" placeholder="Name, command, cwd">
+          </label>
+        </section>
+
+        <section class="table-panel" aria-label="Process table">
+          <div id="error" class="notice notice-error" hidden></div>
+          <div id="empty" class="notice" hidden>No processes registered.</div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">PID</th>
+                  <th scope="col">CPU</th>
+                  <th scope="col">Memory</th>
+                  <th scope="col">Uptime</th>
+                  <th scope="col">Restarts</th>
+                  <th scope="col">Command</th>
+                  <th scope="col">Policy</th>
+                </tr>
+              </thead>
+              <tbody id="process-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
