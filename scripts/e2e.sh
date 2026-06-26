@@ -262,7 +262,7 @@ write_env_ecosystem() {
 [
   {
     "name": "env-test",
-    "args": ["-c", "import os, time; print(os.environ.get('PM2_GO_E2E_ENV')); time.sleep(20)"],
+    "args": ["-c", "import os, time; print(os.environ.get('PM2_GO_E2E_ENV')); print(os.environ.get('PM2_GO_E2E_CALLER_ENV')); time.sleep(20)"],
     "autorestart": false,
     "cwd": ".",
     "env": {
@@ -428,6 +428,10 @@ write_env_ecosystem
 run_pm2 start "$TMP_HOME/env.json" >/dev/null
 env_log="$TMP_HOME/.pm2-go/logs/env-test-out.log"
 wait_for_file_contains "$env_log" "ecosystem-value" 10
+run_pm2 flush env-test >/dev/null
+PM2_GO_E2E_ENV=caller-value PM2_GO_E2E_CALLER_ENV=caller-only run_pm2 restart "$TMP_HOME/env.json" --update-env >/dev/null
+wait_for_file_contains "$env_log" "ecosystem-value" 10
+wait_for_file_contains "$env_log" "caller-only" 10
 run_pm2 delete env-test >/dev/null
 
 log "autorestart crashed process"
@@ -454,6 +458,9 @@ assert_line_count "$direct_ls" "python3" 1
 assert_parent_is_daemon "$direct_ls" "python3"
 direct_log="$TMP_HOME/.pm2-go/logs/python3-out.log"
 wait_for_file_contains "$direct_log" "direct-value" 10
+wait_for_file_contains "$direct_log" "$TMP_HOME/direct-cwd" 10
+PM2_GO_DIRECT_ENV=updated-value run_pm2 restart python3 --update-env >/dev/null
+wait_for_file_contains "$direct_log" "updated-value" 10
 wait_for_file_contains "$direct_log" "$TMP_HOME/direct-cwd" 10
 
 log "delete direct command"

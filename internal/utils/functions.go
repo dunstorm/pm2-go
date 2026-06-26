@@ -339,3 +339,20 @@ func CloneStringMap(input map[string]string) map[string]string {
 	}
 	return output
 }
+
+func MergeStringMaps(base map[string]string, overrides map[string]string) map[string]string {
+	output := CloneStringMap(base)
+	if len(output) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	if output == nil {
+		output = make(map[string]string, len(overrides))
+	}
+	for key, value := range overrides {
+		if key == "" {
+			continue
+		}
+		output[key] = value
+	}
+	return output
+}

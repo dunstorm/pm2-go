@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 )
 
@@ -16,6 +17,10 @@ type Data struct {
 	Env            map[string]string `json:"env"`
 	Scripts        []string          `json:"scripts"`
 	CronRestart    string            `json:"cron_restart"`
+}
+
+type StartFileOptions struct {
+	Env map[string]string
 }
 
 func readFileJson(filePath string) ([]Data, error) {
@@ -34,6 +39,10 @@ func readFileJson(filePath string) ([]Data, error) {
 }
 
 func (app *App) StartFile(filePath string) error {
+	return app.StartFileWithOptions(filePath, StartFileOptions{})
+}
+
+func (app *App) StartFileWithOptions(filePath string, options StartFileOptions) error {
 	payload, err := readFileJson(filePath)
 	if err != nil {
 		return err
@@ -41,6 +50,7 @@ func (app *App) StartFile(filePath string) error {
 
 	for _, p := range payload {
 		process := app.FindProcess(p.Name)
+		env := utils.MergeStringMaps(options.Env, p.Env)
 		if process == nil {
 			app.SpawnProcess(SpawnParams{
 				Name:           p.Name,
@@ -49,10 +59,10 @@ func (app *App) StartFile(filePath string) error {
 				AutoRestart:    p.AutoRestart,
 				Cwd:            p.Cwd,
 				CronRestart:    p.CronRestart,
-				Env:            p.Env,
+				Env:            env,
 			})
 		} else {
-			restartProcess := processFromData(process.Id, p)
+			restartProcess := processFromData(process.Id, p, env)
 			if process.ProcStatus.Status == "online" {
 				app.logger.Info().Msgf("Applying action restartProcessId on app [%s](pid: [ %d ])", process.Name, process.Pid)
 				app.RestartProcess(restartProcess)
@@ -162,7 +172,7 @@ func (app *App) RestoreProcess(allProcesses []*pb.Process) {
 	}
 }
 
-func processFromData(id int32, data Data) *pb.Process {
+func processFromData(id int32, data Data, env map[string]string) *pb.Process {
 	return &pb.Process{
 		Id:             id,
 		Name:           data.Name,
@@ -171,7 +181,7 @@ func processFromData(id int32, data Data) *pb.Process {
 		AutoRestart:    data.AutoRestart,
 		Cwd:            data.Cwd,
 		CronRestart:    data.CronRestart,
-		Env:            data.Env,
+		Env:            env,
 	}
 }
 

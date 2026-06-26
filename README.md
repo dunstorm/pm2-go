@@ -118,6 +118,16 @@ Environment values are stored with process metadata for restart, dump, and
 daemon restore flows. Keep `$HOME/.pm2-go` private if you store sensitive
 values there.
 
+To update a running process with the current shell environment, restart with
+`--update-env`:
+
+```sh
+APP_ENV=production pm2-go restart api --update-env
+```
+
+For JSON ecosystem files, `--update-env` uses the current shell environment as
+the base and lets the file's `env` values override matching keys.
+
 ## Commands
 
 | Command | Purpose |
@@ -129,7 +139,7 @@ values there.
 | `pm2-go describe <name\|id>` | Show process details and log paths. |
 | `pm2-go logs [-l lines] <name\|id>` | Tail stdout and stderr logs. |
 | `pm2-go stop <name\|id\|file.json\|all>` | Stop processes without removing them from the process list. |
-| `pm2-go restart <name\|id\|file.json\|all>` | Restart processes. |
+| `pm2-go restart [--update-env] <name\|id\|file.json\|all>` | Restart processes. |
 | `pm2-go delete <name\|id\|file.json\|all>` | Stop and remove processes from the process list. |
 | `pm2-go flush [name\|id\|file.json\|all]` | Truncate process log files. |
 | `pm2-go dump [name]` | Save the current process list to `$HOME/.pm2-go/<name>.json`. |

@@ -58,6 +58,14 @@ func (app *App) StopProcess(index int32) bool {
 }
 
 func (app *App) RestartProcess(process *pb.Process) *pb.Process {
+	return app.RestartProcessWithEnv(process, nil)
+}
+
+func (app *App) RestartProcessWithEnv(process *pb.Process, env map[string]string) *pb.Process {
+	if env == nil {
+		env = process.Env
+	}
+
 	return app.client.RestartProcess(&pb.RestartProcessRequest{
 		Id:             process.Id,
 		Name:           process.Name,
@@ -66,7 +74,7 @@ func (app *App) RestartProcess(process *pb.Process) *pb.Process {
 		AutoRestart:    process.AutoRestart,
 		Cwd:            process.Cwd,
 		CronRestart:    process.CronRestart,
-		Env:            process.Env,
+		Env:            env,
 	})
 }
 
