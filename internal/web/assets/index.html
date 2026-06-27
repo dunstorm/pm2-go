@@ -3,169 +3,252 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>pm2-go Web</title>
+    <title>pm2-go Web Console</title>
     <link rel="icon" href="/assets/favicon.svg">
     <link rel="stylesheet" href="/assets/app.css">
     <script src="/assets/app.js" defer></script>
   </head>
   <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">pm2-go</p>
-          <h1>Processes</h1>
-        </div>
-        <div class="topbar-actions">
-          <p id="last-updated" class="timestamp">Waiting for daemon</p>
-          <label class="toggle">
-            <input id="auto-refresh" type="checkbox" checked>
-            <span>Auto</span>
-          </label>
-          <button id="refresh" class="button button-primary" type="button">Refresh</button>
-          <form method="post" action="/auth/logout">
-            <button class="button" type="submit">Sign out</button>
-          </form>
-        </div>
-      </header>
+    <div class="app-layout">
+      <!-- Left Sidebar: Process List & Controls -->
+      <aside class="sidebar">
+        <header class="sidebar-header">
+          <div class="sidebar-header-top">
+            <div class="brand-lockup">
+              <p class="eyebrow">process manager</p>
+              <h1>pm2-go</h1>
+            </div>
+            <button id="theme-toggle" class="small-button theme-toggle-btn" type="button" title="Toggle dark mode">🌙 Dark</button>
+          </div>
+          <div class="header-meta">
+            <span id="last-updated" class="timestamp">Waiting...</span>
+          </div>
+        </header>
 
-      <main class="workspace">
-        <section class="summary-strip" aria-label="Process summary">
-          <div>
-            <span class="summary-label">Total</span>
+        <section class="sidebar-search">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input id="search" type="search" placeholder="Search processes...">
+          </div>
+        </section>
+
+        <!-- Summary Statistics Grid -->
+        <section class="summary-grid" aria-label="Process summary">
+          <button class="summary-card active" type="button" data-filter-shortcut="all">
+            <span class="summary-title">Total</span>
             <strong id="total-count">0</strong>
-          </div>
-          <div>
-            <span class="summary-label">Online</span>
+          </button>
+          <button class="summary-card" type="button" data-filter-shortcut="online">
+            <span class="summary-title">Online</span>
             <strong id="online-count">0</strong>
-          </div>
-          <div>
-            <span class="summary-label">Unhealthy</span>
+          </button>
+          <button class="summary-card" type="button" data-filter-shortcut="unhealthy">
+            <span class="summary-title">Unhealthy</span>
             <strong id="unhealthy-count">0</strong>
-          </div>
-          <div>
-            <span class="summary-label">Stopped</span>
+          </button>
+          <button class="summary-card" type="button" data-filter-shortcut="stopped">
+            <span class="summary-title">Stopped</span>
             <strong id="stopped-count">0</strong>
+          </button>
+        </section>
+
+        <!-- Process Navigation List -->
+        <section class="process-section" aria-label="Processes">
+          <div class="section-title-row">
+            <h3>Inventory</h3>
+            <div class="auto-refresh-control">
+              <label class="switch">
+                <input id="auto-refresh" type="checkbox" checked>
+                <span>Auto refresh</span>
+              </label>
+            </div>
+          </div>
+          <div class="process-scroll">
+            <div id="process-list" class="process-list">
+              <!-- Dynamic cards inserted here by app.js -->
+            </div>
+            <div id="empty" class="empty-list-notice" hidden>No processes registered.</div>
           </div>
         </section>
 
-        <section class="toolbar" aria-label="Process filters">
-          <div class="segmented" role="tablist" aria-label="Status filter">
-            <button class="segment active" type="button" data-filter="all">All</button>
-            <button class="segment" type="button" data-filter="online">Online</button>
-            <button class="segment" type="button" data-filter="unhealthy">Unhealthy</button>
-            <button class="segment" type="button" data-filter="stopped">Stopped</button>
-          </div>
-          <label class="search-label">
-            <span>Search</span>
-            <input id="search" type="search" placeholder="Name, command, cwd">
-          </label>
-        </section>
+        <!-- Sidebar Footer Action -->
+        <footer class="sidebar-footer">
+          <button id="refresh" class="button" type="button">Force Refresh</button>
+          <form method="post" action="/auth/logout">
+            <button class="button logout-button" type="submit">Sign out</button>
+          </form>
+        </footer>
+      </aside>
 
-        <section class="dashboard-grid">
-          <section class="table-panel" aria-label="Process table">
-            <div id="error" class="notice notice-error" hidden></div>
-            <div id="empty" class="notice" hidden>No processes registered.</div>
-            <div class="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Name</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">PID</th>
-                    <th scope="col">CPU</th>
-                    <th scope="col">Memory</th>
-                    <th scope="col">Uptime</th>
-                    <th scope="col">Restarts</th>
-                    <th scope="col">Policy</th>
-                  </tr>
-                </thead>
-                <tbody id="process-rows"></tbody>
-              </table>
+      <!-- Right Main Workspace: Details & Monitoring -->
+      <main class="workspace" id="workspace-pane">
+        <!-- Error Banner -->
+        <div id="error" class="notice notice-error" hidden></div>
+
+        <!-- Selected Process Details Panel -->
+        <section id="selected-bar" class="details-panel" aria-live="polite">
+          <header class="details-header">
+            <div class="details-meta">
+              <div class="title-line">
+                <h2 id="detail-name">Select a process</h2>
+                <span id="detail-status" class="status-pill">unknown</span>
+              </div>
+              <p id="detail-command" class="muted-line code-line"></p>
+            </div>
+
+            <!-- Quick Action controls -->
+            <div class="details-actions">
+              <div class="action-button-strip">
+                <button class="button action-btn" data-action="start" title="Start Process">Start</button>
+                <button class="button action-btn" data-action="restart" title="Restart Process">Restart</button>
+                <button class="button action-btn" data-action="reload" title="Reload Environment">Reload</button>
+                <button class="button action-btn" data-action="stop" title="Stop Process">Stop</button>
+                <button class="button action-btn button-danger" data-action="delete" title="Delete Process">Delete</button>
+              </div>
+            </div>
+          </header>
+
+          <!-- Metrics Strip -->
+          <div class="metrics-strip">
+            <div class="metric-card">
+              <span>CPU Usage</span>
+              <strong id="selected-cpu">0.0%</strong>
+            </div>
+            <div class="metric-card">
+              <span>Memory RSS</span>
+              <strong id="selected-memory">0.0MB</strong>
+            </div>
+            <div class="metric-card">
+              <span>Current Uptime</span>
+              <strong id="selected-uptime">0s</strong>
+            </div>
+          </div>
+
+          <!-- Charts Cards Grid -->
+          <section class="grid-card metrics-card">
+            <div class="card-header">
+              <h3>Real-time Resource Utilization</h3>
+              <button id="copy-config" class="small-button" type="button" title="Copy Process config JSON">Copy JSON Config</button>
+            </div>
+            <div class="chart-grid">
+              <div class="chart-card">
+                <div class="chart-label">CPU %</div>
+                <canvas id="cpu-chart" height="150"></canvas>
+              </div>
+              <div class="chart-card">
+                <div class="chart-label">Memory MB</div>
+                <canvas id="memory-chart" height="150"></canvas>
+              </div>
             </div>
           </section>
 
-          <aside class="inspector" aria-label="Process details">
-            <div id="inspector-empty" class="empty-state">
-              <p class="eyebrow">Details</p>
-              <h2>Select a process</h2>
-            </div>
-
-            <div id="inspector-content" hidden>
-              <div class="inspector-header">
-                <div>
-                  <p class="eyebrow">Selected</p>
-                  <h2 id="detail-name">Process</h2>
-                  <p id="detail-command" class="muted-line"></p>
-                </div>
-                <span id="detail-status" class="status-pill">unknown</span>
-              </div>
-
-              <section class="actions-bar" aria-label="Lifecycle actions">
-                <button class="button" type="button" data-action="start">Start</button>
-                <button class="button" type="button" data-action="restart">Restart</button>
-                <button class="button" type="button" data-action="reload">Reload</button>
-                <button class="button" type="button" data-action="stop">Stop</button>
-                <button class="button button-danger" type="button" data-action="delete">Delete</button>
-              </section>
-
-              <section class="panel-section">
-                <div class="section-heading">
-                  <h3>Last hour</h3>
-                  <span id="metric-count" class="muted-line">0 samples</span>
-                </div>
-                <div class="chart-grid">
-                  <div>
-                    <div class="chart-label">CPU %</div>
-                    <canvas id="cpu-chart" width="360" height="120"></canvas>
-                  </div>
-                  <div>
-                    <div class="chart-label">Memory MB</div>
-                    <canvas id="memory-chart" width="360" height="120"></canvas>
-                  </div>
-                </div>
-              </section>
-
-              <section class="panel-section">
-                <div class="section-heading">
-                  <h3>Settings</h3>
-                  <button id="copy-config" class="small-button" type="button">Copy JSON</button>
-                </div>
-                <dl id="settings-list" class="settings-list"></dl>
-              </section>
-
-              <section class="panel-section">
-                <div class="section-heading">
-                  <h3>Logs</h3>
-                  <div class="inline-controls">
-                    <button class="small-button active" type="button" data-log-stream="out">stdout</button>
-                    <button class="small-button" type="button" data-log-stream="err">stderr</button>
-                  </div>
-                </div>
+          <!-- Split Workspace Section: Logs & Tabs Panel -->
+          <div class="split-columns">
+            <!-- Left Split: Real-time Terminal Log Viewer -->
+            <section class="grid-card logs-card">
+              <div class="card-header">
+                <h3>Console Logs</h3>
                 <div class="log-toolbar">
-                  <label class="toggle">
+                  <select id="log-stream">
+                    <option value="both">both (stdout + stderr)</option>
+                    <option value="out">stdout</option>
+                    <option value="err">stderr</option>
+                  </select>
+                  <label class="switch">
                     <input id="log-live" type="checkbox" checked>
                     <span>Live</span>
                   </label>
-                  <label class="toggle">
+                  <label class="switch">
                     <input id="log-autoscroll" type="checkbox" checked>
                     <span>Auto-scroll</span>
                   </label>
-                  <input id="log-search" type="search" placeholder="Filter logs">
+                  <input id="log-search" type="search" placeholder="Filter logs...">
+                  <button id="log-copy" class="small-button" type="button" title="Copy visible logs">Copy</button>
+                  <button id="log-maximize" class="small-button" type="button" title="Maximize Logs Terminal">Maximize</button>
                 </div>
-                <pre id="log-viewer" class="log-viewer" aria-label="Process logs"></pre>
-              </section>
+              </div>
+              <pre id="log-viewer" class="log-viewer" aria-label="Process logs"></pre>
+            </section>
 
-              <section class="panel-section">
-                <div class="section-heading">
-                  <h3>Timeline</h3>
-                  <button id="events-refresh" class="small-button" type="button">Refresh</button>
-                </div>
-                <ul id="event-list" class="event-list"></ul>
-              </section>
-            </div>
-          </aside>
+            <!-- Right Split: Tabs Section (Settings, Env, Timeline) -->
+            <section class="grid-card info-card">
+              <div class="accordion">
+                <!-- Settings Panel -->
+                <article class="accordion-item" data-section="settings">
+                  <button class="accordion-trigger" type="button" aria-expanded="true" aria-controls="panel-settings">
+                    <span>Process Settings</span>
+                    <span class="accordion-meta">Restarts, Cron, Watch</span>
+                  </button>
+                  <div id="panel-settings" class="accordion-panel">
+                    <dl id="settings-list" class="settings-list"></dl>
+                  </div>
+                </article>
+
+                <!-- Environment Keys Panel -->
+                <article class="accordion-item" data-section="env">
+                  <button class="accordion-trigger" type="button" aria-expanded="false" aria-controls="panel-env">
+                    <span>Environment Variables</span>
+                    <span id="env-count" class="accordion-meta">0 keys</span>
+                  </button>
+                  <div id="panel-env" class="accordion-panel" hidden>
+                    <div class="env-search-row">
+                      <span class="search-icon">🔍</span>
+                      <input id="env-search" type="search" placeholder="Filter environment keys...">
+                    </div>
+                    <div id="env-key-list" class="key-grid"></div>
+                  </div>
+                </article>
+
+                <!-- Event Timeline Panel -->
+                <article class="accordion-item" data-section="events">
+                  <button class="accordion-trigger" type="button" aria-expanded="false" aria-controls="panel-events">
+                    <span>Timeline Events</span>
+                    <span class="accordion-meta">Recent logs</span>
+                  </button>
+                  <div id="panel-events" class="accordion-panel" hidden>
+                    <div class="section-heading compact-heading">
+                      <h3>Recent Events Log</h3>
+                    </div>
+                    <ul id="event-list" class="event-list"></ul>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
         </section>
       </main>
     </div>
+
+    <!-- Confirm Dialog Modal Overlay -->
+    <div id="confirm-modal" class="modal-backdrop confirm-backdrop" hidden>
+      <section class="confirm-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <p class="eyebrow">Confirm Action</p>
+        <h2 id="confirm-title">Delete process?</h2>
+        <p id="confirm-copy" class="muted-line">This action removes the process from pm2-go daemon monitoring.</p>
+        <div class="confirm-actions">
+          <button id="confirm-cancel" class="button" type="button">Cancel</button>
+          <button id="confirm-run" class="button button-danger" type="button">Delete</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Logs Modal Panel overlay -->
+    <div id="logs-modal" class="modal-backdrop" hidden>
+      <section class="modal-panel logs-modal-panel">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">Expanded View</p>
+            <h3 class="modal-title-text">Terminal Log Viewer</h3>
+          </div>
+          <button id="close-logs-modal" class="button" type="button">Close Viewer</button>
+        </header>
+        <div class="modal-body logs-modal-body">
+          <pre id="modal-log-viewer" class="log-viewer modal-log-viewer" aria-label="Expanded logs"></pre>
+        </div>
+      </section>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast" class="toast" role="status" hidden></div>
   </body>
 </html>
