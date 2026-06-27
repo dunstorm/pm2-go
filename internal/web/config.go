@@ -22,6 +22,8 @@ type Config struct {
 	Token       string
 	AllowRemote bool
 	ReadOnly    bool
+	AssetDir    string
+	DevReload   bool
 	SessionTTL  time.Duration
 }
 

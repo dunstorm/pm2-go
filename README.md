@@ -322,6 +322,18 @@ make build/cli
 make build/web
 ```
 
+Develop only the web dashboard without rebuilding after every CSS, HTML, or
+JavaScript edit:
+
+```sh
+PM2_GO_WEB_TOKEN=dev-token make web/dev
+```
+
+This serves `internal/web/assets` directly from disk and injects a local
+reload script. Keep the browser on `http://127.0.0.1:9615`, edit files under
+`internal/web/assets`, and the page refreshes automatically. Go changes still
+require restarting `make web/dev`.
+
 Run unit tests:
 
 ```sh

@@ -2,7 +2,7 @@ DOCKER ?= docker
 E2E_IMAGE ?= pm2-go-e2e
 BENCHMARK_IMAGE ?= pm2-go-benchmark
 
-.PHONY: protoc build build/cli build/web install daemon test/quick/start test/quick/stop ls kill logs test test/e2e test/e2e/slow test/e2e/docker test/e2e/docker/slow benchmark benchmark/docker dump restore flush
+.PHONY: protoc build build/cli build/web install daemon web/dev test/quick/start test/quick/stop ls kill logs test test/e2e test/e2e/slow test/e2e/docker test/e2e/docker/slow benchmark benchmark/docker dump restore flush
 
 protoc:
 	@echo "Generating Go files"
@@ -17,7 +17,10 @@ build/web:
 	go build -o bin/pm2-go-web ./cmd/pm2-go-web
 
 install:
-	go install ./cmd/pm2-go
+	go install ./cmd/pm2-go ./cmd/pm2-go-web
+
+web/dev: build/cli
+	PM2_GO_WEB_TOKEN="$${PM2_GO_WEB_TOKEN:-dev-token}" ./bin/pm2-go web --port $${PM2_GO_WEB_PORT:-9615} --read-only --dev-assets internal/web --dev-reload
 
 daemon:
 	go build -o bin/pm2-go ./cmd/pm2-go

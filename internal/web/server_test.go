@@ -280,6 +280,64 @@ func TestGeneratedToken(t *testing.T) {
 	}
 }
 
+func TestDevAssetsInjectReloadScript(t *testing.T) {
+	assetDir := writeTestAssets(t, "<!doctype html><html><body>login</body></html>")
+	server, err := NewServer(Config{
+		Host:      DefaultHost,
+		Port:      DefaultPort,
+		Token:     "secret",
+		AssetDir:  assetDir,
+		DevReload: true,
+	}, fakeProcessSource{})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/login", nil)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), devReloadScriptPath) {
+		t.Fatalf("expected reload script to be injected, got %s", recorder.Body.String())
+	}
+
+	script := httptest.NewRecorder()
+	scriptRequest := httptest.NewRequest(http.MethodGet, devReloadScriptPath, nil)
+	server.Handler().ServeHTTP(script, scriptRequest)
+	if script.Code != http.StatusOK {
+		t.Fatalf("expected reload script response, got %d", script.Code)
+	}
+	if !strings.Contains(script.Body.String(), "/dev/reload/version") {
+		t.Fatalf("expected reload script endpoint, got %s", script.Body.String())
+	}
+}
+
+func TestDevReloadVersionChangesWhenAssetChanges(t *testing.T) {
+	assetDir := writeTestAssets(t, "<!doctype html><html><body>login</body></html>")
+	server, err := NewServer(Config{
+		Host:      DefaultHost,
+		Port:      DefaultPort,
+		Token:     "secret",
+		AssetDir:  assetDir,
+		DevReload: true,
+	}, fakeProcessSource{})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+
+	first := devReloadVersion(t, server)
+	if err := os.WriteFile(assetDir+"/assets/app.css", []byte("body { color: red; }\n"), 0600); err != nil {
+		t.Fatalf("write css: %v", err)
+	}
+	second := devReloadVersion(t, server)
+	if first == second {
+		t.Fatalf("expected version to change after asset edit")
+	}
+}
+
 func newTestServer(t *testing.T, source fakeProcessSource) *Server {
 	t.Helper()
 	server, err := NewServer(Config{
@@ -291,6 +349,37 @@ func newTestServer(t *testing.T, source fakeProcessSource) *Server {
 		t.Fatalf("create server: %v", err)
 	}
 	return server
+}
+
+func writeTestAssets(t *testing.T, loginHTML string) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.Mkdir(root+"/assets", 0700); err != nil {
+		t.Fatalf("mkdir assets: %v", err)
+	}
+	files := map[string]string{
+		"assets/index.html": "<!doctype html><html><body>index</body></html>",
+		"assets/login.html": loginHTML,
+		"assets/app.css":    "body { color: black; }\n",
+		"assets/app.js":     "console.log('dev');\n",
+	}
+	for name, contents := range files {
+		if err := os.WriteFile(root+"/"+name, []byte(contents), 0600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	return root
+}
+
+func devReloadVersion(t *testing.T, server *Server) string {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/dev/reload/version", nil)
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	return strings.TrimSpace(recorder.Body.String())
 }
 
 func loginCookies(t *testing.T, server *Server) []*http.Cookie {

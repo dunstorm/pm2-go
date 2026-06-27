@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +20,7 @@ import (
 
 const sessionCookieName = "pm2_go_web_session"
 const csrfCookieName = "pm2_go_web_csrf"
+const devReloadScriptPath = "/assets/dev-reload.js"
 
 //go:embed assets/*
 var embeddedAssets embed.FS
@@ -40,6 +43,14 @@ func NewServer(config Config, source ProcessSource) (*Server, error) {
 		source = NewGRPCProcessSource(DefaultDaemonPort)
 	}
 
+	assets := fs.FS(embeddedAssets)
+	if runtime.AssetDir != "" {
+		assets = os.DirFS(runtime.AssetDir)
+		if _, err := fs.Stat(assets, "assets/index.html"); err != nil {
+			return nil, fmt.Errorf("invalid web asset dir %q: %w", runtime.AssetDir, err)
+		}
+	}
+
 	events := newEventStore()
 	return &Server{
 		config:   runtime,
@@ -47,7 +58,7 @@ func NewServer(config Config, source ProcessSource) (*Server, error) {
 		sessions: newSessionStore(runtime.SessionTTL),
 		metrics:  newMetricsStore(events),
 		events:   events,
-		assets:   embeddedAssets,
+		assets:   assets,
 	}, nil
 }
 
@@ -65,6 +76,10 @@ func (server *Server) TokenGenerated() bool {
 
 func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	if server.config.DevReload {
+		mux.HandleFunc(devReloadScriptPath, server.handleDevReloadScript)
+		mux.HandleFunc("/dev/reload/version", server.handleDevReloadVersion)
+	}
 	mux.Handle("/assets/", http.FileServer(http.FS(server.assets)))
 	mux.HandleFunc("/login", server.handleLoginPage)
 	mux.HandleFunc("/auth/login", server.handleLogin)
@@ -82,7 +97,7 @@ func (server *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	serveAsset(w, r, server.assets, "assets/index.html")
+	server.serveAsset(w, r, "assets/index.html")
 }
 
 func (server *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +110,7 @@ func (server *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	serveAsset(w, r, server.assets, "assets/login.html")
+	server.serveAsset(w, r, "assets/login.html")
 }
 
 func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -426,14 +441,111 @@ func (server *Server) validToken(token string) bool {
 	return subtle.ConstantTimeCompare(candidateHash[:], expectedHash[:]) == 1
 }
 
-func serveAsset(w http.ResponseWriter, r *http.Request, assets fs.FS, name string) {
-	contents, err := fs.ReadFile(assets, name)
+func (server *Server) serveAsset(w http.ResponseWriter, r *http.Request, name string) {
+	contents, err := fs.ReadFile(server.assets, name)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	if server.config.DevReload && strings.HasSuffix(name, ".html") {
+		contents = injectDevReloadScript(contents)
+	}
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(contents))
 }
+
+func (server *Server) handleDevReloadScript(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(devReloadScript))
+}
+
+func (server *Server) handleDevReloadVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	version, err := assetFingerprint(server.assets)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to fingerprint assets")
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(version))
+}
+
+func injectDevReloadScript(contents []byte) []byte {
+	tag := []byte(`<script src="` + devReloadScriptPath + `" defer></script>`)
+	if bytes.Contains(contents, tag) {
+		return contents
+	}
+	if bytes.Contains(contents, []byte("</body>")) {
+		return bytes.Replace(contents, []byte("</body>"), append(tag, []byte("\n  </body>")...), 1)
+	}
+	return append(contents, tag...)
+}
+
+func assetFingerprint(assets fs.FS) (string, error) {
+	hash := sha256.New()
+	err := fs.WalkDir(assets, "assets", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		switch {
+		case strings.HasSuffix(path, ".css"),
+			strings.HasSuffix(path, ".html"),
+			strings.HasSuffix(path, ".js"),
+			strings.HasSuffix(path, ".svg"):
+		default:
+			return nil
+		}
+		contents, err := fs.ReadFile(assets, path)
+		if err != nil {
+			return err
+		}
+		_, _ = hash.Write([]byte(path))
+		_, _ = hash.Write(contents)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+const devReloadScript = `(() => {
+  const endpoint = "/dev/reload/version";
+  let current = "";
+
+  async function check() {
+    try {
+      const response = await fetch(endpoint, { cache: "no-store" });
+      if (!response.ok) return;
+      const next = (await response.text()).trim();
+      if (!current) {
+        current = next;
+        return;
+      }
+      if (next && next !== current) {
+        window.location.reload();
+      }
+    } catch (_) {
+      // Keep the dashboard usable if the dev server is stopped.
+    }
+  }
+
+  window.setInterval(check, 700);
+  check();
+})();`
 
 func writeJSON(w http.ResponseWriter, status int, value interface{}) {
 	w.Header().Set("Content-Type", "application/json")
