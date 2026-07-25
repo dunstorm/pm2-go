@@ -192,7 +192,14 @@ func (server *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"read_only": server.config.ReadOnly,
+		"allow_remote":        server.config.AllowRemote,
+		"dev_assets":          server.config.AssetDir != "",
+		"dev_reload":          server.config.DevReload,
+		"host":                server.config.Host,
+		"port":                server.config.Port,
+		"read_only":           server.config.ReadOnly,
+		"session_ttl_seconds": int(server.config.SessionTTL.Seconds()),
+		"token_generated":     server.config.tokenGenerated,
 	})
 }
 
