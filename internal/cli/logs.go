@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	"github.com/fatih/color"
 
@@ -48,6 +49,31 @@ var logsCmd = &cobra.Command{
 
 			cyanBold := color.New(color.FgCyan, color.Bold)
 			cyanBold.Printf("[TAILING] Tailing last %d lines for [%s] process (change the value with --lines option)\n", tail, process.Name)
+
+			combinedLogPath := logstore.CombinedPath(process.LogFilePath)
+			if _, err := os.Stat(combinedLogPath); err == nil {
+				color.Cyan("%s last %d lines", combinedLogPath, tail)
+				entries, err := logstore.ReadEntries(combinedLogPath, tail)
+				if err != nil {
+					logger.Error().Msg(err.Error())
+					return
+				}
+				for _, entry := range entries {
+					printCombinedLogEntry(logPrefix, green, red, entry)
+				}
+
+				var wg sync.WaitGroup
+				wg.Add(1)
+				go func() {
+					if err := logstore.TailEntries(combinedLogPath, func(entry logstore.Entry) {
+						printCombinedLogEntry(logPrefix, green, red, entry)
+					}); err != nil {
+						logger.Error().Msg(err.Error())
+					}
+				}()
+				wg.Wait()
+				return
+			}
 
 			outLastModified := utils.GetLastModified(process.LogFilePath)
 			errLastModified := utils.GetLastModified(process.ErrFilePath)
@@ -94,6 +120,14 @@ var logsCmd = &cobra.Command{
 
 		logger.Error().Msgf("Process or Namespace %s not found", args[0])
 	},
+}
+
+func printCombinedLogEntry(logPrefix string, green func(a ...interface{}) string, red func(a ...interface{}) string, entry logstore.Entry) {
+	prefixColor := green
+	if entry.Stream == logstore.StderrStream {
+		prefixColor = red
+	}
+	fmt.Println(prefixColor(logPrefix), logstore.FormatEntry(entry))
 }
 
 func init() {

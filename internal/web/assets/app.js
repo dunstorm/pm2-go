@@ -12,7 +12,7 @@ const state = {
   envQuery: "",
   readOnly: false,
   logStream: "both",
-  logOffsets: { out: 0, err: 0 },
+  logOffsets: { out: 0, err: 0, both: 0 },
   logLines: { out: [], err: [], both: [] },
   logLive: true,
   logQuery: "",
@@ -326,6 +326,19 @@ async function loadLogs(reset) {
 }
 
 async function loadBothStreams(reset) {
+  try {
+    const data = await fetchLogStream("both", 360);
+    state.logOffsets.both = data.offset || 0;
+    const incoming = Array.isArray(data.lines) ? data.lines : [];
+    if (reset) {
+      state.logLines.both = incoming;
+    } else if (incoming.length > 0) {
+      state.logLines.both = state.logLines.both.concat(incoming).slice(-1200);
+    }
+    return;
+  } catch (_error) {
+  }
+
   const [outResult, errResult] = await Promise.allSettled([
     fetchLogStream("out", 180),
     fetchLogStream("err", 180),
@@ -887,7 +900,7 @@ function renderLogs() {
 }
 
 function resetLogs(render = true) {
-  state.logOffsets = { out: 0, err: 0 };
+  state.logOffsets = { out: 0, err: 0, both: 0 };
   state.logLines = { out: [], err: [], both: [] };
   if (render) renderLogs();
 }

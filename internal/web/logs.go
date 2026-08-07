@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/dunstorm/pm2-go/internal/logstore"
 )
 
 const maxInitialLogBytes = 256 * 1024
@@ -38,17 +40,20 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 	}
 	defer file.Close()
 
+	var reader io.Reader = file
 	if offset == 0 && size > maxInitialLogBytes {
 		offset = size - maxInitialLogBytes
 		if _, err := file.Seek(offset, io.SeekStart); err != nil {
 			return logResponse{}, err
 		}
-		_, _ = bufio.NewReader(file).ReadString('\n')
+		buffered := bufio.NewReader(file)
+		_, _ = buffered.ReadString('\n')
+		reader = buffered
 	} else if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return logResponse{}, err
 	}
 
-	contents, err := io.ReadAll(file)
+	contents, err := io.ReadAll(reader)
 	if err != nil {
 		return logResponse{}, err
 	}
@@ -61,6 +66,24 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 		Size:   size,
 		Lines:  lines,
 	}, nil
+}
+
+func readCombinedLog(filePath string, offset int64, tailLines int) (logResponse, error) {
+	logs, err := readLog(filePath, offset, tailLines)
+	if err != nil {
+		return logResponse{}, err
+	}
+
+	lines := make([]string, 0, len(logs.Lines))
+	for _, line := range logs.Lines {
+		entry, err := logstore.ParseLine(line)
+		if err != nil {
+			continue
+		}
+		lines = append(lines, logstore.FormatEntry(entry))
+	}
+	logs.Lines = lines
+	return logs, nil
 }
 
 func splitLogLines(contents string) []string {

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	pb "github.com/dunstorm/pm2-go/proto"
 )
 
@@ -299,11 +300,15 @@ func (server *Server) handleProcessLogs(w http.ResponseWriter, r *http.Request, 
 
 	stream := r.URL.Query().Get("stream")
 	var filePath string
+	read := readLog
 	switch stream {
 	case "", "out", "stdout":
 		filePath = process.LogFilePath
 	case "err", "stderr":
 		filePath = process.ErrFilePath
+	case "both", "combined":
+		filePath = logstore.CombinedPath(process.LogFilePath)
+		read = readCombinedLog
 	default:
 		writeJSONError(w, http.StatusBadRequest, "invalid log stream")
 		return
@@ -318,7 +323,7 @@ func (server *Server) handleProcessLogs(w http.ResponseWriter, r *http.Request, 
 	if tail > 1000 {
 		tail = 1000
 	}
-	logs, err := readLog(filePath, offset, tail)
+	logs, err := read(filePath, offset, tail)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "failed to read log file")
 		return

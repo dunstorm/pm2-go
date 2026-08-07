@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
@@ -246,8 +247,9 @@ func startScheduler(handler *Handler) {
 	handleMaxLog := func(p *pb.Process) {
 		defer wg.Done()
 		// if LogFilePath exceeds LogRotateSize, rename file and add logfilecount
-		combinedLogFilePath := utils.FileSize(p.LogFilePath) + utils.FileSize(p.ErrFilePath)
-		if config.LogRotate && combinedLogFilePath > int64(config.LogRotateSize) {
+		combinedLogPath := logstore.CombinedPath(p.LogFilePath)
+		plainLogFileSize := utils.FileSize(p.LogFilePath) + utils.FileSize(p.ErrFilePath)
+		if config.LogRotate && plainLogFileSize > int64(config.LogRotateSize) {
 			err := utils.RenameFile(p.LogFilePath, p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
 			// if error rename file
 			if err != nil {
@@ -262,6 +264,12 @@ func startScheduler(handler *Handler) {
 				handler.logger.Error().Msgf("Error while renaming log file %s: %s", p.ErrFilePath, err)
 			}
 			handler.logger.Info().Msgf("Renamed err file %s to %s", p.ErrFilePath, p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
+
+			err = utils.RenameFile(combinedLogPath, combinedLogPath+"."+strconv.Itoa(int(p.LogFileCount)))
+			if err != nil {
+				handler.logger.Error().Msgf("Error while renaming log file %s: %s", combinedLogPath, err)
+			}
+			handler.logger.Info().Msgf("Renamed combined log file %s to %s", combinedLogPath, combinedLogPath+"."+strconv.Itoa(int(p.LogFileCount)))
 
 			// if no error, increase logfilecount
 			p.LogFileCount++
@@ -280,6 +288,12 @@ func startScheduler(handler *Handler) {
 					handler.logger.Error().Msgf("Error while deleting log file %s: %s", p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))), err)
 				}
 				handler.logger.Info().Msgf("Deleted err file %s", p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
+
+				err = os.Remove(combinedLogPath + "." + strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
+				if err != nil {
+					handler.logger.Error().Msgf("Error while deleting log file %s: %s", combinedLogPath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))), err)
+				}
+				handler.logger.Info().Msgf("Deleted combined log file %s", combinedLogPath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
 
 				// decrease logfilecount
 				p.LogFileCount = int32(config.LogRotateMaxFiles)

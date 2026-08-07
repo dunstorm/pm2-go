@@ -7,8 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/rs/zerolog"
@@ -35,13 +37,15 @@ type SpawnParams struct {
 	WatchIntervalMS          int32             `json:"watch_interval"`
 	Logger                   *zerolog.Logger
 
-	PidPilePath string `json:"-"`
-	LogFilePath string `json:"-"`
-	ErrFilePath string `json:"-"`
+	PidPilePath         string `json:"-"`
+	LogFilePath         string `json:"-"`
+	ErrFilePath         string `json:"-"`
+	CombinedLogFilePath string `json:"-"`
 
-	logFile  *os.File
-	errFile  *os.File
-	nullFile *os.File
+	logFile      *os.File
+	errFile      *os.File
+	combinedFile *os.File
+	nullFile     *os.File
 }
 
 func (params *SpawnParams) fillDefaults() error {
@@ -65,6 +69,7 @@ func (params *SpawnParams) fillDefaults() error {
 	params.PidPilePath = filepath.Join(utils.GetMainDirectory(), "pids", fmt.Sprintf("%s.pid", fileName))
 	params.LogFilePath = filepath.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-out.log", fileName))
 	params.ErrFilePath = filepath.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-err.log", fileName))
+	params.CombinedLogFilePath = logstore.CombinedPath(params.LogFilePath)
 
 	return nil
 }
@@ -131,12 +136,26 @@ func (params *SpawnParams) createFiles() error {
 		return err
 	}
 	if params.errFile, err = os.OpenFile(params.ErrFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+		params.closeFiles()
+		return err
+	}
+	if params.combinedFile, err = os.OpenFile(params.CombinedLogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+		params.closeFiles()
 		return err
 	}
 	if params.nullFile, err = os.Open(os.DevNull); err != nil {
+		params.closeFiles()
 		return err
 	}
 	return nil
+}
+
+func (params *SpawnParams) closeFiles() {
+	for _, file := range []*os.File{params.nullFile, params.logFile, params.errFile, params.combinedFile} {
+		if file != nil {
+			_ = file.Close()
+		}
+	}
 }
 
 func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
@@ -151,23 +170,44 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	var err error
 	params.ExecutablePath, err = exec.LookPath(params.ExecutablePath)
 	if err != nil {
+		params.closeFiles()
 		return nil, err
 	}
 
 	stdoutReader, stdoutWriter, err := createPipe()
 	if err != nil {
+		params.closeFiles()
 		return nil, err
 	}
 	stderrReader, stderrWriter, err := createPipe()
 	if err != nil {
+		_ = stdoutReader.Close()
+		_ = stdoutWriter.Close()
+		params.closeFiles()
 		return nil, err
 	}
 
-	stdoutTimestampWriter := newTimestampWriter(params.logFile, "")
-	stderrTimestampWriter := newTimestampWriter(params.errFile, "")
+	combinedSink := newCombinedLogSink(params.combinedFile)
+	var logsWG sync.WaitGroup
+	logsWG.Add(2)
+	go func() {
+		defer logsWG.Done()
+		defer stdoutReader.Close()
+		processStreamLogs(stdoutReader, params.logFile, logstore.StdoutStream, combinedSink)
+	}()
+	go func() {
+		defer logsWG.Done()
+		defer stderrReader.Close()
+		processStreamLogs(stderrReader, params.errFile, logstore.StderrStream, combinedSink)
+	}()
 
-	go stdoutTimestampWriter.processLogs(stdoutReader)
-	go stderrTimestampWriter.processLogs(stderrReader)
+	closeLogCapture := func() {
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+		logsWG.Wait()
+		combinedSink.close()
+		params.closeFiles()
+	}
 
 	cmd := exec.Command(params.ExecutablePath, params.Args...)
 	cmd.Dir = params.Cwd
@@ -180,22 +220,13 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	}
 
 	if err := cmd.Start(); err != nil {
-		stdoutWriter.Close()
-		stderrWriter.Close()
-		params.nullFile.Close()
-		params.logFile.Close()
-		params.errFile.Close()
+		closeLogCapture()
 		return nil, err
 	}
 
 	go func() {
-		cmd.Wait()
-
-		stdoutWriter.Close()
-		stderrWriter.Close()
-		params.nullFile.Close()
-		params.logFile.Close()
-		params.errFile.Close()
+		_ = cmd.Wait()
+		closeLogCapture()
 	}()
 
 	params.Logger.Info().Msgf("[%s] ✓", params.Name)

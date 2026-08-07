@@ -4,6 +4,7 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/spf13/cobra"
@@ -20,12 +21,15 @@ var flushCmd = &cobra.Command{
 		logger := master.GetLogger()
 
 		flushProcess := func(process *pb.Process) {
+			combinedLogPath := logstore.CombinedPath(process.LogFilePath)
 			logger.Info().Msg(process.LogFilePath)
 			logger.Info().Msg(process.ErrFilePath)
+			logger.Info().Msg(combinedLogPath)
 
 			// remove file contents
 			utils.RemoveFileContents(process.LogFilePath)
 			utils.RemoveFileContents(process.ErrFilePath)
+			utils.RemoveFileContents(combinedLogPath)
 		}
 
 		if len(args) == 0 || args[0] == "all" {
@@ -61,13 +65,16 @@ var flushCmd = &cobra.Command{
 		}
 
 		// logs
+		combinedLogPath := logstore.CombinedPath(process.LogFilePath)
 		logger.Info().Msg("Flushing:")
 		logger.Info().Msg(process.LogFilePath)
 		logger.Info().Msg(process.ErrFilePath)
+		logger.Info().Msg(combinedLogPath)
 
 		// remove file contents
 		utils.RemoveFileContents(process.LogFilePath)
 		utils.RemoveFileContents(process.ErrFilePath)
+		utils.RemoveFileContents(combinedLogPath)
 
 		logger.Info().Msg("Logs flushed")
 	},

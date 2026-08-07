@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
@@ -238,6 +239,46 @@ func TestProcessLogs(t *testing.T) {
 	}
 	if strings.Contains(recorder.Body.String(), "one") || !strings.Contains(recorder.Body.String(), "three") {
 		t.Fatalf("expected last two log lines, got %s", recorder.Body.String())
+	}
+}
+
+func TestProcessCombinedLogs(t *testing.T) {
+	dir := t.TempDir()
+	logFile := dir + "/api-out.log"
+	combinedLogFile := logstore.CombinedPath(logFile)
+	contents := strings.Join([]string{
+		`{"timestamp":"2026-08-07T10:00:00Z","stream":"stdout","line":"ready"}`,
+		`{"timestamp":"2026-08-07T10:00:01Z","stream":"stderr","line":"warning"}`,
+		`{"timestamp":"2026-08-07T10:00:02Z","stream":"stdout","line":"done"}`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(combinedLogFile, []byte(contents), 0600); err != nil {
+		t.Fatalf("write combined log: %v", err)
+	}
+
+	process := testProcess()
+	process.LogFilePath = logFile
+	server := newTestServer(t, fakeProcessSource{processes: []*pb.Process{process}})
+	cookies := loginCookies(t, server)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/processes/1/logs?stream=both&tail=3", nil)
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	body := recorder.Body.String()
+	stdoutFirst := strings.Index(body, "[stdout]")
+	stderrSecond := strings.Index(body, "[stderr]")
+	stdoutThird := strings.LastIndex(body, "[stdout]")
+	if stdoutFirst < 0 || stderrSecond < 0 || stdoutThird <= stdoutFirst {
+		t.Fatalf("expected formatted combined streams, got %s", body)
+	}
+	if !(stdoutFirst < stderrSecond && stderrSecond < stdoutThird) {
+		t.Fatalf("expected file order to be preserved, got %s", body)
 	}
 }
 

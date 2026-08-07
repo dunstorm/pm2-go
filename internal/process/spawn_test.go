@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	"github.com/rs/zerolog"
 )
@@ -80,6 +81,11 @@ func TestFillDefaultsUsesExecutableBaseNameForAbsolutePath(t *testing.T) {
 	expectedLogFile := filepath.Join(home, ".pm2-go", "logs", "python-out.log")
 	if params.LogFilePath != expectedLogFile {
 		t.Fatalf("expected log file %q, got %q", expectedLogFile, params.LogFilePath)
+	}
+
+	expectedCombinedLogFile := logstore.CombinedPath(expectedLogFile)
+	if params.CombinedLogFilePath != expectedCombinedLogFile {
+		t.Fatalf("expected combined log file %q, got %q", expectedCombinedLogFile, params.CombinedLogFilePath)
 	}
 }
 
