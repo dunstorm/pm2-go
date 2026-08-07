@@ -22,6 +22,7 @@ const (
 
 var cursorGenerationCounter atomic.Int64
 var afterStableLogstoreSnapshot = func(string) {}
+var afterTailEntriesRead = func(string, int) {}
 
 type Entry struct {
 	Timestamp string `json:"timestamp"`
@@ -426,8 +427,12 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 	}
 
 	for {
-		if err := readAvailableTailEntries(tail, handle); err != nil {
+		reopened, err := emitAvailableTailEntries(filename, tail, handle)
+		if err != nil {
 			return err
+		}
+		if reopened {
+			continue
 		}
 		pos, err := tail.file.Seek(0, io.SeekCurrent)
 		if err != nil {
@@ -452,8 +457,12 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 
 			nextID := fileIdentity(info)
 			if tail.id != "" && nextID != "" && tail.id != nextID {
-				if err := readAvailableTailEntries(tail, handle); err != nil {
+				reopened, err := emitAvailableTailEntries(filename, tail, handle)
+				if err != nil {
 					return err
+				}
+				if reopened {
+					break
 				}
 				if err := tail.reopen(filename); err != nil {
 					return err
@@ -479,14 +488,41 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 	}
 }
 
-func readAvailableTailEntries(tail *tailedFile, handle func(Entry)) error {
+func emitAvailableTailEntries(filename string, tail *tailedFile, handle func(Entry)) (bool, error) {
+	if tail.generation != ReadCursorGeneration(filename) {
+		if err := tail.reopen(filename); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	entries, err := readAvailableTailEntries(filename, tail)
+	if err != nil {
+		return false, err
+	}
+	if tail.generation != ReadCursorGeneration(filename) {
+		if err := tail.reopen(filename); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	for _, entry := range entries {
+		handle(entry)
+	}
+	return false, nil
+}
+
+func readAvailableTailEntries(filename string, tail *tailedFile) ([]Entry, error) {
+	entries := []Entry{}
 	for {
 		line, err := tail.reader.ReadString('\n')
 		if err == io.EOF {
 			if line != "" {
 				tail.partial = append(tail.partial, []byte(line)...)
 			}
-			return nil
+			afterTailEntriesRead(filename, len(entries))
+			return entries, nil
 		}
 		if line != "" {
 			if len(tail.partial) > 0 {
@@ -495,11 +531,11 @@ func readAvailableTailEntries(tail *tailedFile, handle func(Entry)) error {
 			}
 			entry, parseErr := ParseLine(strings.TrimRight(line, "\n"))
 			if parseErr == nil {
-				handle(entry)
+				entries = append(entries, entry)
 			}
 		}
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 }

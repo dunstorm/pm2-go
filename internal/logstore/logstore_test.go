@@ -594,6 +594,75 @@ func TestTailEntriesFromCursorDoesNotDrainTruncatedGeneration(t *testing.T) {
 	}
 }
 
+func TestTailEntriesDiscardsReadWhenGenerationChangesBeforeEmit(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	oldLine := `{"stream":"stdout","line":"old"}` + "\n"
+	if err := os.WriteFile(filePath, []byte(oldLine), 0600); err != nil {
+		t.Fatalf("write initial log: %v", err)
+	}
+
+	_, cursor, err := ReadEntriesWithCursor(filePath, 0)
+	if err != nil {
+		t.Fatalf("read cursor: %v", err)
+	}
+
+	previousAfterTailEntriesRead := afterTailEntriesRead
+	flushed := false
+	afterTailEntriesRead = func(path string, count int) {
+		if path != filePath || count == 0 || flushed {
+			return
+		}
+		flushed = true
+		if err := os.Truncate(path, 0); err != nil {
+			t.Fatalf("truncate log: %v", err)
+		}
+		if err := BumpCursorGeneration(path); err != nil {
+			t.Fatalf("bump cursor generation: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(`{"stream":"stderr","line":"new"}`+"\n"), 0600); err != nil {
+			t.Fatalf("write regenerated log: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		afterTailEntriesRead = previousAfterTailEntriesRead
+	})
+
+	entries := make(chan Entry, 2)
+	errs := make(chan error, 1)
+	go func() {
+		errs <- TailEntriesFromCursor(filePath, cursor, func(entry Entry) {
+			entries <- entry
+		})
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+	if err := appendLogLine(filePath, `{"stream":"stderr","line":"new"}`); err != nil {
+		t.Fatalf("append log: %v", err)
+	}
+
+	select {
+	case entry := <-entries:
+		if entry.Stream != StderrStream || entry.Line != "new" {
+			t.Fatalf("expected regenerated entry, got %#v", entry)
+		}
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for regenerated entry")
+	}
+	if !flushed {
+		t.Fatal("expected generation change hook to run")
+	}
+
+	select {
+	case entry := <-entries:
+		t.Fatalf("expected no duplicate regenerated entry, got %#v", entry)
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
 func TestTailEntriesFromStartsAtOffset(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	firstLine := `{"stream":"stdout","line":"first"}` + "\n"
