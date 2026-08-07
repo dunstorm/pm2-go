@@ -33,6 +33,11 @@ type activeManagedLogFiles struct {
 	files map[*managedLogFile]struct{}
 }
 
+type logFilePathLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
 type combinedLogSink struct {
 	file    *managedLogFile
 	entries chan logstore.Entry
@@ -48,16 +53,36 @@ type processLogStream struct {
 }
 
 var activeLogFiles sync.Map
-var logFilePathLocks sync.Map
+
+var (
+	logFilePathLocksMu sync.Mutex
+	logFilePathLocks   = make(map[string]*logFilePathLock)
+)
 
 func lockLogFilePath(path string) func() {
 	if path == "" {
 		return func() {}
 	}
-	value, _ := logFilePathLocks.LoadOrStore(path, &sync.Mutex{})
-	mu := value.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
+	logFilePathLocksMu.Lock()
+	lock := logFilePathLocks[path]
+	if lock == nil {
+		lock = &logFilePathLock{}
+		logFilePathLocks[path] = lock
+	}
+	lock.refs++
+	logFilePathLocksMu.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+
+		logFilePathLocksMu.Lock()
+		lock.refs--
+		if lock.refs == 0 && logFilePathLocks[path] == lock {
+			delete(logFilePathLocks, path)
+		}
+		logFilePathLocksMu.Unlock()
+	}
 }
 
 func openManagedLogFile(path string) (*managedLogFile, error) {

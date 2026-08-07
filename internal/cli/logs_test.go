@@ -53,6 +53,45 @@ func TestMergedLogEntriesIncludesLegacyWhenCombinedIsShort(t *testing.T) {
 	}
 }
 
+func TestMergedLogEntriesPreservesDuplicateLegacyOccurrences(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	errPath := filepath.Join(dir, "api-err.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	baseTime := time.Date(2026, 8, 7, 10, 0, 0, 0, time.Local)
+	plainTimestamp := baseTime.Format("2006-01-02 15:04:05")
+
+	writePlainLog(t, outPath,
+		plainTimestamp+": repeat",
+		plainTimestamp+": repeat",
+		plainTimestamp+": repeat",
+	)
+	writePlainLog(t, combinedPath,
+		`{"timestamp":"`+baseTime.Add(100*time.Millisecond).Format(time.RFC3339Nano)+`","stream":"stdout","line":"repeat"}`,
+	)
+
+	entries, err := mergedLogEntries(&pb.Process{
+		LogFilePath: outPath,
+		ErrFilePath: errPath,
+	}, combinedPath, 4)
+	if err != nil {
+		t.Fatalf("merge log entries: %v", err)
+	}
+
+	got := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		got = append(got, entry.Stream+":"+entry.Line)
+	}
+	want := []string{
+		"stdout:repeat",
+		"stdout:repeat",
+		"stdout:repeat",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
 func writePlainLog(t *testing.T, filename string, lines ...string) {
 	t.Helper()
 

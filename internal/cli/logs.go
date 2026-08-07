@@ -157,15 +157,17 @@ func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]
 		return combinedEntries, nil
 	}
 
-	combinedKeys := make(map[string]struct{}, len(combinedEntries))
+	combinedKeys := make(map[string]int, len(combinedEntries))
 	for _, entry := range combinedEntries {
-		combinedKeys[logEntryKey(entry)] = struct{}{}
+		combinedKeys[logEntryKey(entry)]++
 	}
 
 	records := make([]sortableLogEntry, 0, len(legacyEntries)+len(combinedEntries))
 	order := 0
 	for _, entry := range legacyEntries {
-		if _, exists := combinedKeys[logEntryKey(entry)]; exists {
+		key := logEntryKey(entry)
+		if combinedKeys[key] > 0 {
+			combinedKeys[key]--
 			continue
 		}
 		records = append(records, sortableLogEntry{

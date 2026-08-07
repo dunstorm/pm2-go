@@ -383,6 +383,28 @@ func TestRotateLogFileWaitsForPathLock(t *testing.T) {
 	}
 }
 
+func TestLogFilePathLocksAreReclaimedAfterUse(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	unlock := lockLogFilePath(logPath)
+
+	secondDone := make(chan struct{})
+	go func() {
+		secondUnlock := lockLogFilePath(logPath)
+		secondUnlock()
+		close(secondDone)
+	}()
+
+	waitForLogFilePathLockRefs(t, logPath, 2)
+	unlock()
+
+	select {
+	case <-secondDone:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for second path lock holder")
+	}
+	waitForLogFilePathLockRefs(t, logPath, 0)
+}
+
 func TestWaitForLogCaptureClosesReadersAfterTimeout(t *testing.T) {
 	previousTimeout := logCaptureDrainTimeout
 	logCaptureDrainTimeout = 50 * time.Millisecond
@@ -408,6 +430,29 @@ func TestWaitForLogCaptureClosesReadersAfterTimeout(t *testing.T) {
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("expected bounded log capture wait, took %s", elapsed)
 	}
+}
+
+func waitForLogFilePathLockRefs(t *testing.T, path string, want int) {
+	t.Helper()
+
+	for i := 0; i < 100; i++ {
+		if got := logFilePathLockRefs(path); got == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected path lock refs for %s to become %d, got %d", path, want, logFilePathLockRefs(path))
+}
+
+func logFilePathLockRefs(path string) int {
+	logFilePathLocksMu.Lock()
+	defer logFilePathLocksMu.Unlock()
+
+	lock := logFilePathLocks[path]
+	if lock == nil {
+		return 0
+	}
+	return lock.refs
 }
 
 func writeNumberedLines(writer *os.File, prefix string, count int, done chan<- error) {
