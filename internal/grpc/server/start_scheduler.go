@@ -85,18 +85,14 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 	handler.mu.Unlock()
 
 	rotatedAny := false
-	rotateFailed := false
-	rotatedPaths := make(map[string]bool, 3)
 
 	rotatedLogPath := group.logFilePath + "." + strconv.Itoa(int(logFileCount))
 	rotated, err := rotateLogFile(group.logFilePath, rotatedLogPath)
 	if rotated {
 		rotatedAny = true
-		rotatedPaths[group.logFilePath] = true
 		handler.logger.Info().Msgf("Rotated log file %s to %s", group.logFilePath, rotatedLogPath)
 	}
 	if err != nil {
-		rotateFailed = true
 		handler.logger.Error().Msgf("Error while rotating log file %s: %s", group.logFilePath, err)
 	}
 
@@ -105,11 +101,9 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 	rotated, err = rotateLogFile(group.errFilePath, rotatedErrPath)
 	if rotated {
 		rotatedAny = true
-		rotatedPaths[group.errFilePath] = true
 		handler.logger.Info().Msgf("Rotated err file %s to %s", group.errFilePath, rotatedErrPath)
 	}
 	if err != nil {
-		rotateFailed = true
 		handler.logger.Error().Msgf("Error while rotating log file %s: %s", group.errFilePath, err)
 	}
 
@@ -117,11 +111,9 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 	rotated, err = rotateLogFile(group.combinedLogPath, rotatedCombinedPath)
 	if rotated {
 		rotatedAny = true
-		rotatedPaths[group.combinedLogPath] = true
 		handler.logger.Info().Msgf("Rotated combined log file %s to %s", group.combinedLogPath, rotatedCombinedPath)
 	}
 	if err != nil {
-		rotateFailed = true
 		handler.logger.Error().Msgf("Error while rotating log file %s: %s", group.combinedLogPath, err)
 	}
 
@@ -141,24 +133,18 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 	handler.mu.Unlock()
 
 	// if LogFileCount exceeds LogRotateCount, delete oldest log file
-	if nextLogFileCount >= int32(config.LogRotateMaxFiles) {
-		oldestLogFileIndex := nextLogFileCount - int32(config.LogRotateMaxFiles)
-		prunePaths := []string{group.logFilePath, group.errFilePath, group.combinedLogPath}
-		if rotateFailed {
-			prunePaths = rotatedLogPaths(group, rotatedPaths)
-		}
-		pruneLogArchives(handler, prunePaths, oldestLogFileIndex)
+	maxLogFiles := normalizedLogRotateMaxFiles(config)
+	if nextLogFileCount >= maxLogFiles {
+		oldestLogFileIndex := nextLogFileCount - maxLogFiles
+		pruneLogArchives(handler, []string{group.logFilePath, group.errFilePath, group.combinedLogPath}, oldestLogFileIndex)
 	}
 }
 
-func rotatedLogPaths(group *logRotationGroup, rotatedPaths map[string]bool) []string {
-	paths := make([]string, 0, 3)
-	for _, path := range []string{group.logFilePath, group.errFilePath, group.combinedLogPath} {
-		if rotatedPaths[path] {
-			paths = append(paths, path)
-		}
+func normalizedLogRotateMaxFiles(config utils.Config) int32 {
+	if config.LogRotateMaxFiles <= 0 {
+		return 1
 	}
-	return paths
+	return int32(config.LogRotateMaxFiles)
 }
 
 func pruneLogArchives(handler *Handler, paths []string, index int32) {

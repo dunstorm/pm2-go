@@ -148,7 +148,7 @@ func TestHandleMaxLogGroupKeepsCountMonotonicAfterPrune(t *testing.T) {
 	}
 }
 
-func TestHandleMaxLogGroupPrunesSuccessfulArchivesAfterPartialFailure(t *testing.T) {
+func TestHandleMaxLogGroupPrunesArchivesAfterPartialFailure(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "api-out.log")
 	errPath := filepath.Join(dir, "api-err.log")
@@ -206,8 +206,62 @@ func TestHandleMaxLogGroupPrunesSuccessfulArchivesAfterPartialFailure(t *testing
 	if _, err := os.Stat(combinedPath + ".1"); !os.IsNotExist(err) {
 		t.Fatalf("expected successful combined archive to be pruned, stat error: %v", err)
 	}
-	if _, err := os.Stat(errPath + ".1"); err != nil {
-		t.Fatalf("expected failed stderr archive to remain, stat error: %v", err)
+	if _, err := os.Stat(errPath + ".1"); !os.IsNotExist(err) {
+		t.Fatalf("expected failed stderr archive to be pruned, stat error: %v", err)
+	}
+}
+
+func TestHandleMaxLogGroupPrunesCreatedArchiveWhenMaxFilesInvalid(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	errPath := filepath.Join(dir, "api-err.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	if err := os.WriteFile(outPath, []byte("large enough"), 0640); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	for _, path := range []string{outPath + ".0", errPath + ".0", combinedPath + ".0"} {
+		if err := os.WriteFile(path, []byte("archive"), 0640); err != nil {
+			t.Fatalf("write archive %s: %v", path, err)
+		}
+	}
+
+	process := &pb.Process{
+		Id:          1,
+		LogFilePath: outPath,
+		ErrFilePath: errPath,
+	}
+	logger := zerolog.New(io.Discard)
+	handler := &Handler{
+		logger:       &logger,
+		databaseById: map[int32]*pb.Process{process.Id: process},
+	}
+
+	previousRotateLogFile := rotateLogFile
+	rotateLogFile = func(string, string) (bool, error) {
+		return true, nil
+	}
+	t.Cleanup(func() {
+		rotateLogFile = previousRotateLogFile
+	})
+
+	handleMaxLogGroup(handler, &logRotationGroup{
+		logFilePath:     outPath,
+		errFilePath:     errPath,
+		combinedLogPath: combinedPath,
+		processes:       []*pb.Process{process},
+	}, utils.Config{
+		LogRotate:         true,
+		LogRotateSize:     1,
+		LogRotateMaxFiles: 0,
+	})
+
+	if process.LogFileCount != 1 {
+		t.Fatalf("expected log file count to advance, got %d", process.LogFileCount)
+	}
+	for _, path := range []string{outPath + ".0", errPath + ".0", combinedPath + ".0"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected invalid max-files pruning to remove %s, stat error: %v", path, err)
+		}
 	}
 }
 
