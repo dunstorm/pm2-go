@@ -132,26 +132,22 @@ func commandEnvironment(base []string, overrides map[string]string, pythonExecut
 
 func (params *SpawnParams) createFiles() error {
 	var err error
-	logFile, err := os.OpenFile(params.LogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	params.logFile, err = openManagedLogFile(params.LogFilePath)
 	if err != nil {
 		return err
 	}
-	params.logFile = registerManagedLogFile(params.LogFilePath, logFile)
 
-	errFile, err := os.OpenFile(params.ErrFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
-	if err != nil {
-		params.closeFiles()
-		return err
-	}
-	params.errFile = registerManagedLogFile(params.ErrFilePath, errFile)
-
-	combinedFile, err := os.OpenFile(params.CombinedLogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	params.errFile, err = openManagedLogFile(params.ErrFilePath)
 	if err != nil {
 		params.closeFiles()
 		return err
 	}
-	params.combinedFile = registerManagedLogFile(params.CombinedLogFilePath, combinedFile)
 
+	params.combinedFile, err = openManagedLogFile(params.CombinedLogFilePath)
+	if err != nil {
+		params.closeFiles()
+		return err
+	}
 	if params.nullFile, err = os.Open(os.DevNull); err != nil {
 		params.closeFiles()
 		return err

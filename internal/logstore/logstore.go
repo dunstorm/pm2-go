@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -20,6 +21,13 @@ type Entry struct {
 	Timestamp string `json:"timestamp"`
 	Stream    string `json:"stream"`
 	Line      string `json:"line"`
+}
+
+type tailedFile struct {
+	file   *os.File
+	reader *bufio.Reader
+	id     string
+	size   int64
 }
 
 func CombinedPath(stdoutLogPath string) string {
@@ -89,24 +97,14 @@ func ReadEntries(filename string, tail int) ([]Entry, error) {
 }
 
 func TailEntries(filename string, handle func(Entry)) error {
-	file, err := os.Open(filename)
+	tail, err := openTailedFile(filename, true)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer tail.close()
 
-	if _, err := file.Seek(0, io.SeekEnd); err != nil {
-		return err
-	}
-
-	reader := bufio.NewReader(file)
-	info, err := file.Stat()
-	if err != nil {
-		return err
-	}
-	oldSize := info.Size()
 	for {
-		for line, err := reader.ReadString('\n'); err != io.EOF; line, err = reader.ReadString('\n') {
+		for line, err := tail.reader.ReadString('\n'); err != io.EOF; line, err = tail.reader.ReadString('\n') {
 			entry, parseErr := ParseLine(strings.TrimRight(line, "\n"))
 			if parseErr == nil {
 				handle(entry)
@@ -115,31 +113,93 @@ func TailEntries(filename string, handle func(Entry)) error {
 				break
 			}
 		}
-		pos, err := file.Seek(0, io.SeekCurrent)
+		pos, err := tail.file.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return err
 		}
 		for {
 			time.Sleep(200 * time.Millisecond)
-			info, err := file.Stat()
+			info, err := os.Stat(filename)
 			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
 				return err
 			}
-			newSize := info.Size()
-			if newSize != oldSize {
-				if newSize < oldSize {
-					if _, err := file.Seek(0, io.SeekStart); err != nil {
-						return err
-					}
-				} else if _, err := file.Seek(pos, io.SeekStart); err != nil {
+			nextID := fileIdentity(info)
+			if tail.id != "" && nextID != "" && tail.id != nextID {
+				if err := tail.reopen(filename); err != nil {
 					return err
 				}
-				reader = bufio.NewReader(file)
-				oldSize = newSize
+				break
+			}
+
+			newSize := info.Size()
+			if newSize != tail.size {
+				if newSize < tail.size {
+					if _, err := tail.file.Seek(0, io.SeekStart); err != nil {
+						return err
+					}
+				} else if _, err := tail.file.Seek(pos, io.SeekStart); err != nil {
+					return err
+				}
+				tail.reader = bufio.NewReader(tail.file)
+				tail.size = newSize
 				break
 			}
 		}
 	}
+}
+
+func openTailedFile(filename string, seekEnd bool) (*tailedFile, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if seekEnd {
+		if _, err := file.Seek(0, io.SeekEnd); err != nil {
+			_ = file.Close()
+			return nil, err
+		}
+	}
+
+	return &tailedFile{
+		file:   file,
+		reader: bufio.NewReader(file),
+		id:     fileIdentity(info),
+		size:   info.Size(),
+	}, nil
+}
+
+func (tail *tailedFile) reopen(filename string) error {
+	tail.close()
+	next, err := openTailedFile(filename, false)
+	if err != nil {
+		return err
+	}
+	*tail = *next
+	return nil
+}
+
+func (tail *tailedFile) close() {
+	if tail == nil || tail.file == nil {
+		return
+	}
+	_ = tail.file.Close()
+	tail.file = nil
+}
+
+func fileIdentity(info os.FileInfo) string {
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		return fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
+	}
+	return ""
 }
 
 func readTailLines(filename string, tail int) ([]string, error) {

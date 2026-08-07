@@ -260,6 +260,33 @@ func TestRotateLogFileReopensActiveManagedFile(t *testing.T) {
 	}
 }
 
+func TestRotateLogFileWaitsForPathLock(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	unlock := lockLogFilePath(logPath)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := RotateLogFile(logPath, logPath+".0")
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("expected rotation to wait for path lock, got err=%v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("rotate after unlock: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for rotation after path unlock")
+	}
+}
+
 func writeNumberedLines(writer *os.File, prefix string, count int, done chan<- error) {
 	var err error
 	for i := 0; i < count; i++ {

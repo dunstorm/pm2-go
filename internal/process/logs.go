@@ -42,6 +42,28 @@ type processLogStream struct {
 }
 
 var activeLogFiles sync.Map
+var logFilePathLocks sync.Map
+
+func lockLogFilePath(path string) func() {
+	if path == "" {
+		return func() {}
+	}
+	value, _ := logFilePathLocks.LoadOrStore(path, &sync.Mutex{})
+	mu := value.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+func openManagedLogFile(path string) (*managedLogFile, error) {
+	unlock := lockLogFilePath(path)
+	defer unlock()
+
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	if err != nil {
+		return nil, err
+	}
+	return registerManagedLogFile(path, file), nil
+}
 
 func registerManagedLogFile(path string, file *os.File) *managedLogFile {
 	logFile := &managedLogFile{path: path, file: file}
@@ -50,6 +72,9 @@ func registerManagedLogFile(path string, file *os.File) *managedLogFile {
 }
 
 func RotateLogFile(filename, rotatedFilename string) (bool, error) {
+	unlock := lockLogFilePath(filename)
+	defer unlock()
+
 	if value, ok := activeLogFiles.Load(filename); ok {
 		return value.(*managedLogFile).rotate(rotatedFilename)
 	}
@@ -105,6 +130,9 @@ func (logFile *managedLogFile) close() {
 	if logFile == nil {
 		return
 	}
+
+	unlock := lockLogFilePath(logFile.path)
+	defer unlock()
 
 	logFile.mu.Lock()
 	if logFile.file != nil {
