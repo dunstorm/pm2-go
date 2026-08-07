@@ -4,8 +4,6 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"github.com/dunstorm/pm2-go/internal/logstore"
-	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/spf13/cobra"
 )
@@ -20,19 +18,14 @@ var flushCmd = &cobra.Command{
 
 		logger := master.GetLogger()
 
-		flushLogFile := func(logFilePath string) {
-			logger.Info().Msg(logFilePath)
-			if err := processrunner.FlushLogFile(logFilePath); err != nil {
-				logger.Error().Msgf("Error while flushing log file %s: %s", logFilePath, err)
-				return
-			}
-		}
-
 		flushProcess := func(process *pb.Process) {
-			combinedLogPath := logstore.CombinedPath(process.LogFilePath)
-			flushLogFile(process.LogFilePath)
-			flushLogFile(process.ErrFilePath)
-			flushLogFile(combinedLogPath)
+			response := master.FlushProcess(process)
+			for _, logFilePath := range response.GetLogFilePaths() {
+				logger.Info().Msg(logFilePath)
+			}
+			if !response.GetSuccess() {
+				logger.Error().Msgf("Error while flushing logs for %s", process.Name)
+			}
 		}
 
 		if len(args) == 0 || args[0] == "all" {

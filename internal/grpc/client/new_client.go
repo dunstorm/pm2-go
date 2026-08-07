@@ -104,6 +104,18 @@ func (c *Client) DeleteProcess(id int32) bool {
 	return r.GetSuccess()
 }
 
+func (c *Client) FlushProcess(id int32) *pb.FlushProcessResponse {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, manager := c.Dial()
+	defer conn.Close()
+	r, err := (*manager).FlushProcess(ctx, &pb.FlushProcessRequest{Id: id})
+	if err != nil {
+		c.logger.Fatal().Msgf("%s", err.Error())
+	}
+	return r
+}
+
 // spawn process inside server
 func (c *Client) SpawnProcess(request *pb.SpawnProcessRequest) *pb.SpawnProcessResponse {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

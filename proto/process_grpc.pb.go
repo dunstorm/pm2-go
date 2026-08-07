@@ -25,6 +25,7 @@ const (
 	ProcessManager_ListProcess_FullMethodName    = "/proto.ProcessManager/ListProcess"
 	ProcessManager_SpawnProcess_FullMethodName   = "/proto.ProcessManager/SpawnProcess"
 	ProcessManager_RestartProcess_FullMethodName = "/proto.ProcessManager/RestartProcess"
+	ProcessManager_FlushProcess_FullMethodName   = "/proto.ProcessManager/FlushProcess"
 )
 
 // ProcessManagerClient is the client API for ProcessManager service.
@@ -37,6 +38,7 @@ type ProcessManagerClient interface {
 	ListProcess(ctx context.Context, in *ListProcessRequest, opts ...grpc.CallOption) (*ListProcessResponse, error)
 	SpawnProcess(ctx context.Context, in *SpawnProcessRequest, opts ...grpc.CallOption) (*SpawnProcessResponse, error)
 	RestartProcess(ctx context.Context, in *RestartProcessRequest, opts ...grpc.CallOption) (*Process, error)
+	FlushProcess(ctx context.Context, in *FlushProcessRequest, opts ...grpc.CallOption) (*FlushProcessResponse, error)
 }
 
 type processManagerClient struct {
@@ -107,6 +109,16 @@ func (c *processManagerClient) RestartProcess(ctx context.Context, in *RestartPr
 	return out, nil
 }
 
+func (c *processManagerClient) FlushProcess(ctx context.Context, in *FlushProcessRequest, opts ...grpc.CallOption) (*FlushProcessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FlushProcessResponse)
+	err := c.cc.Invoke(ctx, ProcessManager_FlushProcess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProcessManagerServer is the server API for ProcessManager service.
 // All implementations must embed UnimplementedProcessManagerServer
 // for forward compatibility.
@@ -117,6 +129,7 @@ type ProcessManagerServer interface {
 	ListProcess(context.Context, *ListProcessRequest) (*ListProcessResponse, error)
 	SpawnProcess(context.Context, *SpawnProcessRequest) (*SpawnProcessResponse, error)
 	RestartProcess(context.Context, *RestartProcessRequest) (*Process, error)
+	FlushProcess(context.Context, *FlushProcessRequest) (*FlushProcessResponse, error)
 	mustEmbedUnimplementedProcessManagerServer()
 }
 
@@ -144,6 +157,9 @@ func (UnimplementedProcessManagerServer) SpawnProcess(context.Context, *SpawnPro
 }
 func (UnimplementedProcessManagerServer) RestartProcess(context.Context, *RestartProcessRequest) (*Process, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RestartProcess not implemented")
+}
+func (UnimplementedProcessManagerServer) FlushProcess(context.Context, *FlushProcessRequest) (*FlushProcessResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FlushProcess not implemented")
 }
 func (UnimplementedProcessManagerServer) mustEmbedUnimplementedProcessManagerServer() {}
 func (UnimplementedProcessManagerServer) testEmbeddedByValue()                        {}
@@ -274,6 +290,24 @@ func _ProcessManager_RestartProcess_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProcessManager_FlushProcess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FlushProcessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProcessManagerServer).FlushProcess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProcessManager_FlushProcess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProcessManagerServer).FlushProcess(ctx, req.(*FlushProcessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProcessManager_ServiceDesc is the grpc.ServiceDesc for ProcessManager service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -304,6 +338,10 @@ var ProcessManager_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RestartProcess",
 			Handler:    _ProcessManager_RestartProcess_Handler,
+		},
+		{
+			MethodName: "FlushProcess",
+			Handler:    _ProcessManager_FlushProcess_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

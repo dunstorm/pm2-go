@@ -40,8 +40,13 @@ type logFilePathLock struct {
 
 type combinedLogSink struct {
 	file    *managedLogFile
-	entries chan logstore.Entry
+	entries chan combinedLogWrite
 	done    chan struct{}
+}
+
+type combinedLogWrite struct {
+	entry logstore.Entry
+	done  chan struct{}
 }
 
 type processLogStream struct {
@@ -291,14 +296,15 @@ func (logFile *managedLogFile) writeEntry(entry logstore.Entry) {
 func newCombinedLogSink(file *managedLogFile) *combinedLogSink {
 	sink := &combinedLogSink{
 		file:    file,
-		entries: make(chan logstore.Entry, 256),
+		entries: make(chan combinedLogWrite, 256),
 		done:    make(chan struct{}),
 	}
 
 	go func() {
 		defer close(sink.done)
-		for entry := range sink.entries {
-			sink.file.writeEntry(entry)
+		for write := range sink.entries {
+			sink.file.writeEntry(write.entry)
+			close(write.done)
 		}
 	}()
 
@@ -309,7 +315,12 @@ func (sink *combinedLogSink) write(entry logstore.Entry) {
 	if sink == nil {
 		return
 	}
-	sink.entries <- entry
+	done := make(chan struct{})
+	sink.entries <- combinedLogWrite{
+		entry: entry,
+		done:  done,
+	}
+	<-done
 }
 
 func (sink *combinedLogSink) close() {
@@ -509,12 +520,12 @@ func (stream *processLogStream) close(sink *combinedLogSink) {
 
 func (stream *processLogStream) writeLine(line string, sink *combinedLogSink) {
 	now := time.Now()
-	stream.file.writePlainLine(now, defaultLogTimestampFormat, line)
 	sink.write(logstore.Entry{
 		Timestamp: now.UTC().Format(time.RFC3339Nano),
 		Stream:    stream.name,
 		Line:      line,
 	})
+	stream.file.writePlainLine(now, defaultLogTimestampFormat, line)
 }
 
 func createPipe() (*os.File, *os.File, error) {

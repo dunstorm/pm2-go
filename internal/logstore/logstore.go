@@ -202,18 +202,23 @@ type sortableEntry struct {
 }
 
 func ReadMergedEntries(combinedLogPath, stdoutLogPath, stderrLogPath string, tail int) ([]Entry, TailCursor, error) {
-	combinedEntries, tailCursor, err := ReadEntriesWithCursor(combinedLogPath, tail)
-	if err != nil {
-		return nil, TailCursor{}, err
-	}
-	if tail <= 0 || len(combinedEntries) >= tail {
-		return combinedEntries, tailCursor, nil
+	if tail <= 0 {
+		return ReadEntriesWithCursor(combinedLogPath, tail)
 	}
 
 	legacyEntries, err := legacyLogEntries(stdoutLogPath, stderrLogPath, tail)
 	if err != nil {
 		return nil, TailCursor{}, err
 	}
+
+	combinedEntries, tailCursor, err := ReadEntriesWithCursor(combinedLogPath, tail)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	if len(combinedEntries) >= tail {
+		return combinedEntries, tailCursor, nil
+	}
+
 	if len(legacyEntries) == 0 {
 		return combinedEntries, tailCursor, nil
 	}

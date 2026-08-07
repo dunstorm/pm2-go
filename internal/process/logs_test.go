@@ -477,6 +477,41 @@ func TestFlushLogFileWaitsForActiveWriterLock(t *testing.T) {
 	}
 }
 
+func TestProcessLogStreamWritesCombinedEntryBeforeReturning(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	combinedPath := filepath.Join(dir, "api-combined.jsonl")
+	outFile := openManagedTestLogFile(t, outPath)
+	combinedFile := openManagedTestLogFile(t, combinedPath)
+	sink := newCombinedLogSink(combinedFile)
+	defer sink.close()
+
+	stream := &processLogStream{
+		name: logstore.StdoutStream,
+		file: outFile,
+	}
+	stream.writeLine("ready", sink)
+
+	entries, err := logstore.ReadEntries(combinedPath, 10)
+	if err != nil {
+		t.Fatalf("read combined entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected one combined entry before sink close, got %d", len(entries))
+	}
+	if entries[0].Stream != logstore.StdoutStream || entries[0].Line != "ready" {
+		t.Fatalf("unexpected combined entry: %#v", entries[0])
+	}
+
+	plain, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read plain log: %v", err)
+	}
+	if !strings.Contains(string(plain), ": ready\n") {
+		t.Fatalf("expected plain log line, got %q", string(plain))
+	}
+}
+
 func TestLogFilePathLocksAreReclaimedAfterUse(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	unlock := lockLogFilePath(logPath)
