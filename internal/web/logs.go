@@ -17,6 +17,7 @@ const maxIncrementalLogReadBytes = 1024 * 1024
 const maxIncrementalLogRecordBytes = 8 * 1024 * 1024
 
 var readLogCursorGeneration = logstore.ReadCursorGeneration
+var afterStableLogSnapshot = func(string) {}
 
 type logResponse struct {
 	FileID string   `json:"fileId"`
@@ -37,6 +38,8 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 	}
 	size := info.Size()
 	currentFileID := logFileID(info, generation)
+	currentPhysicalFileID := logPhysicalFileID(info)
+	afterStableLogSnapshot(filePath)
 	offsetReset := false
 	if fileID != "" && fileID != currentFileID {
 		offset = 0
@@ -73,6 +76,14 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 	lines, consumedOffset, err := readIncrementalLogLines(reader, readStart, size)
 	if err != nil {
 		return logResponse{}, err
+	}
+	if logPathRotatedSinceSnapshot(filePath, currentPhysicalFileID) {
+		var drainedLines []string
+		drainedLines, consumedOffset, err = drainRotatedLogDescriptor(file, consumedOffset)
+		if err != nil {
+			return logResponse{}, err
+		}
+		lines = append(lines, drainedLines...)
 	}
 	return logResponse{
 		FileID: currentFileID,
@@ -148,6 +159,29 @@ func readIncrementalLogLines(reader io.Reader, readStart, fileSize int64) ([]str
 	}
 
 	return splitLogLines(string(contents)), readStart + int64(consumedBytes), nil
+}
+
+func drainRotatedLogDescriptor(file *os.File, offset int64) ([]string, int64, error) {
+	lines := []string{}
+	for {
+		info, err := file.Stat()
+		if err != nil {
+			return nil, offset, err
+		}
+		if offset >= info.Size() {
+			return lines, offset, nil
+		}
+
+		nextLines, nextOffset, err := readIncrementalLogLines(file, offset, info.Size())
+		if err != nil {
+			return nil, offset, err
+		}
+		lines = append(lines, nextLines...)
+		if nextOffset <= offset {
+			return lines, offset, nil
+		}
+		offset = nextOffset
+	}
 }
 
 func readCombinedLog(filePath string, offset int64, fileID string, tailLines int) (logResponse, error) {
@@ -233,10 +267,25 @@ func formatLogEntries(entries []logstore.Entry) []string {
 }
 
 func logFileID(info os.FileInfo, generation string) string {
+	return logFileIDFromParts(logPhysicalFileID(info), generation)
+}
+
+func logPhysicalFileID(info os.FileInfo) string {
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		return logFileIDFromParts(fmt.Sprintf("%d:%d", stat.Dev, stat.Ino), generation)
+		return fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
 	}
-	return generation
+	return ""
+}
+
+func logPathRotatedSinceSnapshot(filePath, physicalFileID string) bool {
+	if physicalFileID == "" {
+		return false
+	}
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return true
+	}
+	return logPhysicalFileID(info) != physicalFileID
 }
 
 func logFileIDFromParts(fileID, generation string) string {

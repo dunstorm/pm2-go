@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -176,8 +177,8 @@ func TestRestartProcessAbortsAfterConcurrentStopRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stop process during restart wait: %v", err)
 	}
-	if stopResponse.GetSuccess() {
-		t.Fatal("expected stop to report no tracked process while restart owns the old wait")
+	if !stopResponse.GetSuccess() {
+		t.Fatal("expected stop to cancel restart while restart owns the old wait")
 	}
 
 	releaseWaitOnce.Do(func() {
@@ -200,5 +201,153 @@ func TestRestartProcessAbortsAfterConcurrentStopRequest(t *testing.T) {
 	}
 	if handler.processes[process.Id] != nil {
 		t.Fatal("expected no replacement process to be tracked")
+	}
+}
+
+func TestRestartProcessRejectsConcurrentRestartDuringWait(t *testing.T) {
+	command := exec.Command("sleep", "10")
+	if err := command.Start(); err != nil {
+		t.Fatalf("start test process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = command.Process.Kill()
+		_, _ = command.Process.Wait()
+	})
+
+	logger := zerolog.New(io.Discard)
+	process := &pb.Process{
+		Id:             1,
+		Name:           "restart-once",
+		Pid:            int32(command.Process.Pid),
+		ExecutablePath: "python3",
+		ProcStatus: &pb.ProcStatus{
+			Status: "online",
+			Cpu:    "2.0%",
+			Memory: "8.0MB",
+		},
+	}
+	handler := &Handler{
+		logger:           &logger,
+		databaseById:     map[int32]*pb.Process{process.Id: process},
+		databaseByName:   map[string]*pb.Process{process.Name: process},
+		processes:        map[int32]*os.Process{process.Id: command.Process},
+		metricsUpdatedAt: map[int32]time.Time{process.Id: time.Now()},
+	}
+
+	previousWaitForRestartProcessExit := waitForRestartProcessExit
+	waitStarted := make(chan struct{})
+	releaseWait := make(chan struct{})
+	var waitStartedOnce sync.Once
+	var releaseWaitOnce sync.Once
+	waitForRestartProcessExit = func(pid int32, timeout time.Duration) bool {
+		waitStartedOnce.Do(func() {
+			close(waitStarted)
+		})
+		<-releaseWait
+		return true
+	}
+	t.Cleanup(func() {
+		releaseWaitOnce.Do(func() {
+			close(releaseWait)
+		})
+		waitForRestartProcessExit = previousWaitForRestartProcessExit
+	})
+
+	restartErr := make(chan error, 1)
+	go func() {
+		_, err := handler.RestartProcess(context.Background(), &pb.RestartProcessRequest{
+			Id:             process.Id,
+			Name:           process.Name,
+			ExecutablePath: "definitely-not-a-real-command",
+		})
+		restartErr <- err
+	}()
+
+	select {
+	case <-waitStarted:
+	case <-time.After(time.Second):
+		t.Fatal("expected first restart to enter exit wait")
+	}
+
+	_, err := handler.RestartProcess(context.Background(), &pb.RestartProcessRequest{
+		Id:             process.Id,
+		Name:           process.Name,
+		ExecutablePath: "python3",
+		Args:           []string{"-c", "import time; time.sleep(30)"},
+	})
+	if err == nil {
+		t.Fatal("expected concurrent restart to be rejected")
+	}
+
+	releaseWaitOnce.Do(func() {
+		close(releaseWait)
+	})
+	select {
+	case err := <-restartErr:
+		if err == nil {
+			t.Fatal("expected first restart to fail after wait because executable is missing")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first restart process to return")
+	}
+}
+
+func TestRestartProcessRestoresTrackingWhenStopFails(t *testing.T) {
+	logger := zerolog.New(io.Discard)
+	process := &pb.Process{
+		Id:             1,
+		Name:           "signal-fails",
+		Pid:            12345,
+		ExecutablePath: "python3",
+		AutoRestart:    true,
+		ProcStatus: &pb.ProcStatus{
+			Status:    "online",
+			Cpu:       "2.0%",
+			Memory:    "8.0MB",
+			ParentPid: 111,
+		},
+	}
+	found := &os.Process{Pid: int(process.Pid)}
+	handler := &Handler{
+		logger:           &logger,
+		databaseById:     map[int32]*pb.Process{process.Id: process},
+		databaseByName:   map[string]*pb.Process{process.Name: process},
+		processes:        map[int32]*os.Process{process.Id: found},
+		metricsUpdatedAt: map[int32]time.Time{process.Id: time.Now()},
+	}
+
+	previousStopProcessForRestartFunc := stopProcessForRestartFunc
+	stopProcessForRestartFunc = func(*os.Process, int32, *pb.RestartProcessRequest) error {
+		return errors.New("signal failed")
+	}
+	t.Cleanup(func() {
+		stopProcessForRestartFunc = previousStopProcessForRestartFunc
+	})
+
+	_, err := handler.RestartProcess(context.Background(), &pb.RestartProcessRequest{
+		Id:             process.Id,
+		Name:           process.Name,
+		ExecutablePath: "python3",
+	})
+	if err == nil {
+		t.Fatal("expected restart to fail")
+	}
+	if process.Pid != 12345 {
+		t.Fatalf("expected pid to be restored, got %d", process.Pid)
+	}
+	if process.GetStopSignal() {
+		t.Fatal("expected stop signal to be restored")
+	}
+	if process.GetProcStatus().GetStatus() != "online" {
+		t.Fatalf("expected status to be restored, got %q", process.GetProcStatus().GetStatus())
+	}
+	if process.GetProcStatus().GetCpu() != "2.0%" || process.GetProcStatus().GetMemory() != "8.0MB" {
+		t.Fatalf("expected metrics to be restored, got cpu=%q memory=%q", process.GetProcStatus().GetCpu(), process.GetProcStatus().GetMemory())
+	}
+	if handler.processes[process.Id] != found {
+		t.Fatal("expected tracked process handle to be restored")
+	}
+	if handler.operationActive[process.Id] {
+		t.Fatal("expected operation reservation to be cleared")
 	}
 }

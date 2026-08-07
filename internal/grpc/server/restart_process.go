@@ -20,6 +20,7 @@ import (
 const defaultReloadKillTimeout = 1600 * time.Millisecond
 
 var waitForRestartProcessExit = waitForTrackedProcessExit
+var stopProcessForRestartFunc = stopProcessForRestart
 
 func reloadSignal(name string) (os.Signal, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(name))
@@ -90,6 +91,15 @@ func stopProcessForRestart(found *os.Process, pid int32, in *pb.RestartProcessRe
 	return utils.KillProcessGroup(found)
 }
 
+func restoreProcessRuntimeState(process, previous *pb.Process) {
+	process.Pid = previous.Pid
+	process.ProcStatus = cloneProcess(previous).ProcStatus
+	process.StopSignal = previous.StopSignal
+	process.AutoRestart = previous.AutoRestart
+	process.RestartAt = previous.RestartAt
+	process.NextStartAt = previous.NextStartAt
+}
+
 func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessRequest) (*pb.Process, error) {
 	var nextStartAt *timestamppb.Timestamp
 	if in.CronRestart != "" {
@@ -107,12 +117,19 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		return nil, status.Error(400, "failed to find process")
 	}
 
+	operationGeneration, ok := api.beginOperationLocked(in.Id)
+	if !ok {
+		api.mu.Unlock()
+		return nil, status.Error(409, "process operation in progress")
+	}
+
 	found := api.processes[in.Id]
-	operationGeneration := api.bumpOperationGenerationLocked(in.Id)
+	previousProcess := cloneProcess(currentProcess)
 	pid := int32(0)
 	if found != nil {
 		if in.Graceful {
 			if _, err := reloadSignal(in.Signal); err != nil {
+				api.finishOperationLocked(in.Id)
 				api.mu.Unlock()
 				return nil, err
 			}
@@ -129,7 +146,15 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	api.mu.Unlock()
 
 	if found != nil {
-		if err := stopProcessForRestart(found, pid, in); err != nil {
+		if err := stopProcessForRestartFunc(found, pid, in); err != nil {
+			api.mu.Lock()
+			if api.databaseById[in.Id] == currentProcess && api.operationGenerationLocked(in.Id) == operationGeneration {
+				restoreProcessRuntimeState(currentProcess, previousProcess)
+				updateProcessMap(api, in.Id, found)
+				api.persistStateLocked()
+			}
+			api.finishOperationLocked(in.Id)
+			api.mu.Unlock()
 			return nil, err
 		}
 	}
@@ -137,6 +162,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	api.mu.Lock()
 	defer api.mu.Unlock()
 	if api.databaseById[in.Id] != currentProcess || api.operationGenerationLocked(in.Id) != operationGeneration {
+		api.finishOperationLocked(in.Id)
 		return nil, status.Error(409, "process changed during restart")
 	}
 
@@ -167,6 +193,8 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		currentProcess.SetStatus("stopped")
 		currentProcess.ResetPid()
 		updateProcessMap(api, currentProcess.Id, nil)
+		api.finishOperationLocked(in.Id)
+		api.persistStateLocked()
 		return nil, err
 	}
 
@@ -195,6 +223,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 
 	osProcess, running := utils.GetProcess(newProcess.Pid)
 	if !running {
+		api.finishOperationLocked(in.Id)
 		return nil, status.Error(400, "failed to restart process")
 	}
 
@@ -203,6 +232,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	api.databaseByName[newProcess.Name] = newProcess
 	api.processes[newProcess.Id] = osProcess
 	delete(api.metricsUpdatedAt, newProcess.Id)
+	api.finishOperationLocked(in.Id)
 	api.persistStateLocked()
 
 	return cloneProcess(newProcess), nil

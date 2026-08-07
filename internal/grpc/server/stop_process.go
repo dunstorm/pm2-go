@@ -26,7 +26,19 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 		}, nil
 	}
 
-	api.bumpOperationGenerationLocked(in.Id)
+	if api.operationActive[in.Id] && found == nil {
+		api.bumpOperationGenerationLocked(in.Id)
+		process.SetStatus("stopped")
+		process.ResetCPUMemory()
+		process.StopSignal = true
+		delete(api.metricsUpdatedAt, in.Id)
+		api.persistStateLocked()
+		api.mu.Unlock()
+		return &pb.StopProcessResponse{
+			Success: true,
+		}, nil
+	}
+
 	process.SetStatus("stopped")
 	process.ResetCPUMemory()
 	process.StopSignal = true
@@ -42,6 +54,7 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	}
 
 	pid := process.Pid
+	api.beginOperationLocked(in.Id)
 	process.ResetPid()
 	updateProcessMap(api, in.Id, nil)
 	api.persistStateLocked()
@@ -52,6 +65,9 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	if pid > 0 {
 		waitForStopProcessExit(pid, 2*time.Second)
 	}
+	api.mu.Lock()
+	api.finishOperationLocked(in.Id)
+	api.mu.Unlock()
 
 	return &pb.StopProcessResponse{
 		Success: true,

@@ -500,6 +500,76 @@ func TestReadLogResetsOffsetWhenFileChanges(t *testing.T) {
 	}
 }
 
+func TestReadLogDrainsOpenedDescriptorAfterRotation(t *testing.T) {
+	dir := t.TempDir()
+	logFile := dir + "/drain-rotated.log"
+	if err := os.WriteFile(logFile, []byte("first\n"), 0600); err != nil {
+		t.Fatalf("write original log: %v", err)
+	}
+
+	first, err := readLog(logFile, 0, "", 10)
+	if err != nil {
+		t.Fatalf("read original log: %v", err)
+	}
+
+	previousAfterStableLogSnapshot := afterStableLogSnapshot
+	rotated := false
+	afterStableLogSnapshot = func(path string) {
+		if rotated || path != logFile {
+			return
+		}
+		rotated = true
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			t.Fatalf("open original for append: %v", err)
+		}
+		if _, err := file.WriteString("second\n"); err != nil {
+			_ = file.Close()
+			t.Fatalf("append original log: %v", err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatalf("close original append: %v", err)
+		}
+		if err := os.Rename(path, path+".1"); err != nil {
+			t.Fatalf("rotate log: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("third\n"), 0600); err != nil {
+			t.Fatalf("write replacement log: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		afterStableLogSnapshot = previousAfterStableLogSnapshot
+	})
+
+	logs, err := readLog(logFile, first.Offset, first.FileID, 10)
+	if err != nil {
+		t.Fatalf("read rotated descriptor: %v", err)
+	}
+	if !rotated {
+		t.Fatal("expected rotation hook to run")
+	}
+	if logs.FileID != first.FileID {
+		t.Fatalf("expected old file cursor before replacement poll, got %q want %q", logs.FileID, first.FileID)
+	}
+	if logs.Offset != int64(len("first\nsecond\n")) {
+		t.Fatalf("expected drained offset, got %d", logs.Offset)
+	}
+	if strings.Join(logs.Lines, ",") != "second" {
+		t.Fatalf("expected drained line from rotated descriptor, got %#v", logs.Lines)
+	}
+
+	next, err := readLog(logFile, logs.Offset, logs.FileID, 10)
+	if err != nil {
+		t.Fatalf("read replacement log: %v", err)
+	}
+	if next.FileID == logs.FileID {
+		t.Fatal("expected next poll to switch to replacement file")
+	}
+	if strings.Join(next.Lines, ",") != "third" {
+		t.Fatalf("expected replacement line, got %#v", next.Lines)
+	}
+}
+
 func TestReadLogResetsOffsetWhenCursorGenerationChanges(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/flushed.log"
