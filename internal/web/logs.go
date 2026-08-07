@@ -13,6 +13,7 @@ import (
 )
 
 const maxIncrementalLogReadBytes = 1024 * 1024
+const maxIncrementalLogRecordBytes = 2 * 1024 * 1024
 
 type logResponse struct {
 	FileID string   `json:"fileId"`
@@ -100,8 +101,25 @@ func readIncrementalLogLines(reader io.Reader, readStart, fileSize int64) ([]str
 			contents = contents[:lastNewline+1]
 			consumedBytes = lastNewline + 1
 		} else {
-			contents = nil
-			consumedBytes = int(limit)
+			extraLimit := maxIncrementalLogRecordBytes - int64(consumedBytes)
+			if extraLimit > remaining-int64(consumedBytes) {
+				extraLimit = remaining - int64(consumedBytes)
+			}
+			if extraLimit > 0 {
+				extra, err := io.ReadAll(io.LimitReader(reader, extraLimit))
+				if err != nil {
+					return nil, 0, err
+				}
+				contents = append(contents, extra...)
+				consumedBytes = len(contents)
+			}
+			firstNewline := bytes.IndexByte(contents, '\n')
+			if firstNewline >= 0 {
+				contents = contents[:firstNewline+1]
+				consumedBytes = firstNewline + 1
+			} else if int64(consumedBytes) < remaining {
+				return nil, readStart, nil
+			}
 		}
 	}
 

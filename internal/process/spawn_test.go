@@ -90,6 +90,24 @@ func TestDeleteSpawnedProcessWaitKeepsReusedPIDRegistration(t *testing.T) {
 	}
 }
 
+func TestWaitForSpawnedProcessClaimsClosedRegistration(t *testing.T) {
+	const pid int32 = -4343
+	done := make(chan struct{})
+	spawnedProcessWaits.Store(pid, done)
+	t.Cleanup(func() {
+		spawnedProcessWaits.Delete(pid)
+	})
+	close(done)
+
+	exited, tracked := WaitForSpawnedProcess(pid, 0)
+	if !tracked || !exited {
+		t.Fatalf("expected closed registration to be tracked and exited, tracked=%v exited=%v", tracked, exited)
+	}
+	if _, ok := spawnedProcessWaits.Load(pid); ok {
+		t.Fatal("expected closed registration to be deleted after waiter claims it")
+	}
+}
+
 func TestSpawnNewProcessReturnsPidFileError(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.Disabled)
 	home := t.TempDir()

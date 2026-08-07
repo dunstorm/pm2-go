@@ -18,6 +18,7 @@ import (
 )
 
 var logCaptureDrainTimeout = 2 * time.Second
+var spawnedProcessWaitRetention = 30 * time.Second
 var spawnedProcessWaits sync.Map
 
 type SpawnParams struct {
@@ -202,6 +203,7 @@ func WaitForSpawnedProcess(pid int32, timeout time.Duration) (bool, bool) {
 	if timeout <= 0 {
 		select {
 		case <-done:
+			deleteSpawnedProcessWait(pid, done)
 			return true, true
 		default:
 			return false, true
@@ -212,6 +214,7 @@ func WaitForSpawnedProcess(pid int32, timeout time.Duration) (bool, bool) {
 	defer timer.Stop()
 	select {
 	case <-done:
+		deleteSpawnedProcessWait(pid, done)
 		return true, true
 	case <-timer.C:
 		return false, true
@@ -290,7 +293,9 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	go func() {
 		_ = cmd.Wait()
 		close(waitDone)
-		deleteSpawnedProcessWait(pid, waitDone)
+		time.AfterFunc(spawnedProcessWaitRetention, func() {
+			deleteSpawnedProcessWait(pid, waitDone)
+		})
 		closeLogCapture()
 	}()
 

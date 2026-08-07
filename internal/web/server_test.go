@@ -358,7 +358,8 @@ func TestReadLogReturnsConsumedOffset(t *testing.T) {
 func TestReadLogBoundsFarBehindIncrementalRead(t *testing.T) {
 	logFile := t.TempDir() + "/incremental-large.log"
 	prefix := "first\n"
-	contents := prefix + strings.Repeat("x", maxIncrementalLogReadBytes+1024) + "\nsecond\n"
+	largeLine := strings.Repeat("x", maxIncrementalLogReadBytes+1024)
+	contents := prefix + largeLine + "\nsecond\n"
 	if err := os.WriteFile(logFile, []byte(contents), 0600); err != nil {
 		t.Fatalf("write log: %v", err)
 	}
@@ -367,15 +368,38 @@ func TestReadLogBoundsFarBehindIncrementalRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}
-	expectedOffset := int64(len(prefix) + maxIncrementalLogReadBytes)
+	expectedOffset := int64(len(prefix) + len(largeLine) + 1)
 	if logs.Offset != expectedOffset {
 		t.Fatalf("expected bounded consumed offset %d, got %d", expectedOffset, logs.Offset)
 	}
 	if logs.Size != expectedOffset {
 		t.Fatalf("expected bounded response size %d, got %d", expectedOffset, logs.Size)
 	}
+	if len(logs.Lines) != 1 || logs.Lines[0] != largeLine {
+		t.Fatalf("expected oversized complete line, got %d lines with length %d", len(logs.Lines), len(strings.Join(logs.Lines, "")))
+	}
+}
+
+func TestReadLogRetainsIncompleteOversizedIncrementalRecord(t *testing.T) {
+	logFile := t.TempDir() + "/incremental-incomplete.log"
+	prefix := "first\n"
+	contents := prefix + strings.Repeat("x", maxIncrementalLogRecordBytes+1024)
+	if err := os.WriteFile(logFile, []byte(contents), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	logs, err := readLog(logFile, int64(len(prefix)), "", 10)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if logs.Offset != int64(len(prefix)) {
+		t.Fatalf("expected cursor to retain incomplete record at %d, got %d", len(prefix), logs.Offset)
+	}
+	if logs.Size != logs.Offset {
+		t.Fatalf("expected size to match retained offset, got size=%d offset=%d", logs.Size, logs.Offset)
+	}
 	if len(logs.Lines) != 0 {
-		t.Fatalf("expected oversized partial line to be skipped until a complete line is available, got %#v", logs.Lines)
+		t.Fatalf("expected no lines for incomplete oversized record, got %#v", logs.Lines)
 	}
 }
 
