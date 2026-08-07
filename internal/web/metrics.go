@@ -38,7 +38,15 @@ func newMetricsStore(events *eventStore) *metricsStore {
 	}
 }
 
-func (store *metricsStore) observe(processes []*pb.Process) {
+func (store *metricsStore) observeSnapshot(processes []*pb.Process) {
+	store.observe(processes, true)
+}
+
+func (store *metricsStore) observePartial(processes []*pb.Process) {
+	store.observe(processes, false)
+}
+
+func (store *metricsStore) observe(processes []*pb.Process, fullSnapshot bool) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
@@ -80,9 +88,11 @@ func (store *metricsStore) observe(processes []*pb.Process) {
 		store.points[process.Id] = upsertMetricPoint(store.points[process.Id], point, cutoff)
 	}
 
-	for id := range store.status {
-		if _, ok := seen[id]; !ok {
-			delete(store.status, id)
+	if fullSnapshot {
+		for id := range store.status {
+			if _, ok := seen[id]; !ok {
+				delete(store.status, id)
+			}
 		}
 	}
 }

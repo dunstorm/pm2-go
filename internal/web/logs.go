@@ -40,6 +40,7 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 	}
 	defer file.Close()
 
+	initialRead := offset == 0
 	var reader io.Reader = file
 	if offset == 0 && size > maxInitialLogBytes {
 		offset = size - maxInitialLogBytes
@@ -58,7 +59,7 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 		return logResponse{}, err
 	}
 	lines := splitLogLines(string(contents))
-	if offset == 0 && len(lines) > tailLines {
+	if initialRead && len(lines) > tailLines {
 		lines = lines[len(lines)-tailLines:]
 	}
 	return logResponse{

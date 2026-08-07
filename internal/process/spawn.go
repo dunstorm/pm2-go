@@ -189,16 +189,12 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 
 	combinedSink := newCombinedLogSink(params.combinedFile)
 	var logsWG sync.WaitGroup
-	logsWG.Add(2)
+	logsWG.Add(1)
 	go func() {
 		defer logsWG.Done()
 		defer stdoutReader.Close()
-		processStreamLogs(stdoutReader, params.logFile, logstore.StdoutStream, combinedSink)
-	}()
-	go func() {
-		defer logsWG.Done()
 		defer stderrReader.Close()
-		processStreamLogs(stderrReader, params.errFile, logstore.StderrStream, combinedSink)
+		processStreamLogs(stdoutReader, stderrReader, params.logFile, params.errFile, combinedSink)
 	}()
 
 	closeLogCapture := func() {

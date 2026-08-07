@@ -215,7 +215,7 @@ func (server *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusServiceUnavailable, "pm2-go daemon is unavailable")
 		return
 	}
-	server.metrics.observe(processes)
+	server.metrics.observeSnapshot(processes)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"processes": processViews(processes),
 		"events":    server.events.list(),
@@ -265,7 +265,7 @@ func (server *Server) handleProcessDetail(w http.ResponseWriter, r *http.Request
 		writeJSONError(w, http.StatusNotFound, "process not found")
 		return
 	}
-	server.metrics.observe([]*pb.Process{process})
+	server.metrics.observePartial([]*pb.Process{process})
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"process": newProcessView(process),
 		"metrics": server.metrics.history(id),
@@ -279,7 +279,7 @@ func (server *Server) handleProcessMetrics(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if process, err := server.source.FindProcess(r.Context(), id); err == nil {
-		server.metrics.observe([]*pb.Process{process})
+		server.metrics.observePartial([]*pb.Process{process})
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"points": server.metrics.history(id),
@@ -410,7 +410,7 @@ func (server *Server) handleProcessAction(w http.ResponseWriter, r *http.Request
 		"action":  action,
 	}
 	if updated != nil {
-		server.metrics.observe([]*pb.Process{updated})
+		server.metrics.observePartial([]*pb.Process{updated})
 		response["process"] = newProcessView(updated)
 	}
 	writeJSON(w, http.StatusOK, response)

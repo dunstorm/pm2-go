@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -239,6 +240,31 @@ func TestProcessLogs(t *testing.T) {
 	}
 	if strings.Contains(recorder.Body.String(), "one") || !strings.Contains(recorder.Body.String(), "three") {
 		t.Fatalf("expected last two log lines, got %s", recorder.Body.String())
+	}
+}
+
+func TestReadLogHonorsTailAfterBoundedInitialRead(t *testing.T) {
+	logFile := t.TempDir() + "/large.log"
+	var builder strings.Builder
+	for i := 0; i < 400; i++ {
+		builder.WriteString(strings.Repeat("x", 1024))
+		builder.WriteString(" line-")
+		builder.WriteString(strconv.Itoa(i))
+		builder.WriteString("\n")
+	}
+	if err := os.WriteFile(logFile, []byte(builder.String()), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	logs, err := readLog(logFile, 0, 5)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if len(logs.Lines) != 5 {
+		t.Fatalf("expected five lines, got %d", len(logs.Lines))
+	}
+	if !strings.Contains(logs.Lines[4], "line-399") {
+		t.Fatalf("expected final line, got %#v", logs.Lines)
 	}
 }
 
