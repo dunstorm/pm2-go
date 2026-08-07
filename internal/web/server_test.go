@@ -428,6 +428,41 @@ func TestReadLogConsumesJSONExpandedIncrementalRecord(t *testing.T) {
 	}
 }
 
+func TestReadLogRetriesWhenCursorGenerationChangesDuringOpen(t *testing.T) {
+	logFile := t.TempDir() + "/incremental-generation.log"
+	prefix := "first\n"
+	if err := os.WriteFile(logFile, []byte(prefix+"second\n"), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	previousReadLogCursorGeneration := readLogCursorGeneration
+	calls := 0
+	readLogCursorGeneration = func(string) string {
+		calls++
+		if calls == 1 {
+			return "old"
+		}
+		return "new"
+	}
+	t.Cleanup(func() {
+		readLogCursorGeneration = previousReadLogCursorGeneration
+	})
+
+	logs, err := readLog(logFile, int64(len(prefix)), "", 10)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if calls < 4 {
+		t.Fatalf("expected generation change retry, got %d generation reads", calls)
+	}
+	if logs.FileID != "new" && !strings.HasSuffix(logs.FileID, ":new") {
+		t.Fatalf("expected stable new generation file id, got %q", logs.FileID)
+	}
+	if len(logs.Lines) != 1 || logs.Lines[0] != "second" {
+		t.Fatalf("expected incremental line after retry, got %#v", logs.Lines)
+	}
+}
+
 func TestReadLogResetsOffsetWhenFileChanges(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/rotated.log"

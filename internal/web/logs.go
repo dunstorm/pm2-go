@@ -15,6 +15,8 @@ import (
 const maxIncrementalLogReadBytes = 1024 * 1024
 const maxIncrementalLogRecordBytes = 8 * 1024 * 1024
 
+var readLogCursorGeneration = logstore.ReadCursorGeneration
+
 type logResponse struct {
 	FileID string   `json:"fileId"`
 	Offset int64    `json:"offset"`
@@ -23,21 +25,17 @@ type logResponse struct {
 }
 
 func readLog(filePath string, offset int64, fileID string, tailLines int) (logResponse, error) {
-	file, err := os.Open(filePath)
+	file, info, generation, err := openStableLogSnapshot(filePath)
 	if err != nil {
 		return logResponse{}, err
 	}
 	defer file.Close()
 
-	info, err := file.Stat()
-	if err != nil {
-		return logResponse{}, err
-	}
 	if info.IsDir() {
 		return logResponse{}, errors.New("log path is a directory")
 	}
 	size := info.Size()
-	currentFileID := logFileID(filePath, info)
+	currentFileID := logFileID(info, generation)
 	if fileID != "" && fileID != currentFileID {
 		offset = 0
 	}
@@ -78,6 +76,28 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 		Size:   consumedOffset,
 		Lines:  lines,
 	}, nil
+}
+
+func openStableLogSnapshot(filePath string) (*os.File, os.FileInfo, string, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		generationBefore := readLogCursorGeneration(filePath)
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		info, err := file.Stat()
+		if err != nil {
+			_ = file.Close()
+			return nil, nil, "", err
+		}
+		generationAfter := readLogCursorGeneration(filePath)
+		if generationBefore != generationAfter {
+			_ = file.Close()
+			continue
+		}
+		return file, info, generationAfter, nil
+	}
+	return nil, nil, "", errors.New("log changed while opening")
 }
 
 func readIncrementalLogLines(reader io.Reader, readStart, fileSize int64) ([]string, int64, error) {
@@ -144,8 +164,7 @@ func readCombinedLog(filePath string, offset int64, fileID string, tailLines int
 	return logs, nil
 }
 
-func logFileID(filePath string, info os.FileInfo) string {
-	generation := logstore.ReadCursorGeneration(filePath)
+func logFileID(info os.FileInfo, generation string) string {
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 		return logFileIDFromParts(fmt.Sprintf("%d:%d", stat.Dev, stat.Ino), generation)
 	}
