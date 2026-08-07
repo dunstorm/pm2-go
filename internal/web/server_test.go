@@ -685,6 +685,45 @@ func TestProcessCombinedLogsDoesNotRepeatLegacyBackfillForEmptyCombinedCursor(t 
 	}
 }
 
+func TestReadCombinedLogUsesKnownZeroOffsetAsIncrementalCursor(t *testing.T) {
+	dir := t.TempDir()
+	combinedLogFile := logstore.CombinedPath(dir + "/api-out.log")
+	if err := os.WriteFile(combinedLogFile, nil, 0600); err != nil {
+		t.Fatalf("write empty combined log: %v", err)
+	}
+
+	first, err := readCombinedLog(combinedLogFile, 0, "", 2)
+	if err != nil {
+		t.Fatalf("read empty combined log: %v", err)
+	}
+	if first.Offset != 0 || first.FileID == "" {
+		t.Fatalf("expected empty combined cursor with file id, got offset=%d fileID=%q", first.Offset, first.FileID)
+	}
+
+	records := []string{
+		`{"timestamp":"2026-08-07T10:00:00Z","stream":"stdout","line":"one"}`,
+		`{"timestamp":"2026-08-07T10:00:01Z","stream":"stdout","line":"two"}`,
+		`{"timestamp":"2026-08-07T10:00:02Z","stream":"stdout","line":"three"}`,
+	}
+	if err := os.WriteFile(combinedLogFile, []byte(strings.Join(records, "\n")+"\n"), 0600); err != nil {
+		t.Fatalf("append combined records: %v", err)
+	}
+
+	second, err := readCombinedLog(combinedLogFile, first.Offset, first.FileID, 2)
+	if err != nil {
+		t.Fatalf("read combined log from known zero cursor: %v", err)
+	}
+	if len(second.Lines) != 3 {
+		t.Fatalf("expected all records after known zero cursor, got %#v", second.Lines)
+	}
+	got := strings.Join(second.Lines, "\n")
+	for _, line := range []string{"one", "two", "three"} {
+		if !strings.Contains(got, line) {
+			t.Fatalf("expected incremental lines to contain %q, got %#v", line, second.Lines)
+		}
+	}
+}
+
 func TestReadCombinedLogBackfillsMalformedInitialTail(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/api-out.log"

@@ -151,7 +151,7 @@ func readIncrementalLogLines(reader io.Reader, readStart, fileSize int64) ([]str
 }
 
 func readCombinedLog(filePath string, offset int64, fileID string, tailLines int) (logResponse, error) {
-	if offset == 0 {
+	if offset == 0 && fileID == "" {
 		return readInitialCombinedLog(filePath, tailLines)
 	}
 

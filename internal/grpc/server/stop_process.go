@@ -9,15 +9,17 @@ import (
 	pb "github.com/dunstorm/pm2-go/proto"
 )
 
+var waitForStopProcessExit = waitForTrackedProcessExit
+
 // stop process
 func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) (*pb.StopProcessResponse, error) {
 	api.mu.Lock()
-	defer api.mu.Unlock()
 
 	process := api.databaseById[in.Id]
 	found := api.processes[in.Id]
 
 	if process == nil {
+		api.mu.Unlock()
 		api.logger.Info().Msgf("process not found: %d", in.Id)
 		return &pb.StopProcessResponse{
 			Success: false,
@@ -32,6 +34,7 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	if found == nil {
 		api.logger.Info().Msgf("process not found: %d", in.Id)
 		api.persistStateLocked()
+		api.mu.Unlock()
 		return &pb.StopProcessResponse{
 			Success: false,
 		}, nil
@@ -39,14 +42,15 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 
 	pid := process.Pid
 	process.ResetPid()
+	updateProcessMap(api, in.Id, nil)
+	api.persistStateLocked()
+	api.mu.Unlock()
 
 	// for child process
 	_ = utils.KillProcessGroup(found)
 	if pid > 0 {
-		waitForTrackedProcessExit(pid, 2*time.Second)
+		waitForStopProcessExit(pid, 2*time.Second)
 	}
-	updateProcessMap(api, in.Id, nil)
-	api.persistStateLocked()
 
 	return &pb.StopProcessResponse{
 		Success: true,
