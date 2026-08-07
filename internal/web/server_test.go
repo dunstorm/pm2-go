@@ -533,7 +533,7 @@ func TestReadLogDrainsOpenedDescriptorAfterRotation(t *testing.T) {
 		if err := os.Rename(path, path+".1"); err != nil {
 			t.Fatalf("rotate log: %v", err)
 		}
-		if err := os.WriteFile(path, []byte("third\n"), 0600); err != nil {
+		if err := os.WriteFile(path, []byte("third\nfourth\n"), 0600); err != nil {
 			t.Fatalf("write replacement log: %v", err)
 		}
 	}
@@ -541,32 +541,32 @@ func TestReadLogDrainsOpenedDescriptorAfterRotation(t *testing.T) {
 		afterStableLogSnapshot = previousAfterStableLogSnapshot
 	})
 
-	logs, err := readLog(logFile, first.Offset, first.FileID, 10)
+	logs, err := readLog(logFile, first.Offset, first.FileID, 1)
 	if err != nil {
 		t.Fatalf("read rotated descriptor: %v", err)
 	}
 	if !rotated {
 		t.Fatal("expected rotation hook to run")
 	}
-	if logs.FileID != first.FileID {
-		t.Fatalf("expected old file cursor before replacement poll, got %q want %q", logs.FileID, first.FileID)
+	if logs.FileID == first.FileID {
+		t.Fatal("expected response to transition to replacement file cursor")
 	}
-	if logs.Offset != int64(len("first\nsecond\n")) {
-		t.Fatalf("expected drained offset, got %d", logs.Offset)
+	if logs.Offset != int64(len("third\nfourth\n")) {
+		t.Fatalf("expected replacement offset, got %d", logs.Offset)
 	}
-	if strings.Join(logs.Lines, ",") != "second" {
-		t.Fatalf("expected drained line from rotated descriptor, got %#v", logs.Lines)
+	if strings.Join(logs.Lines, ",") != "second,third,fourth" {
+		t.Fatalf("expected drained and replacement lines, got %#v", logs.Lines)
 	}
 
 	next, err := readLog(logFile, logs.Offset, logs.FileID, 10)
 	if err != nil {
 		t.Fatalf("read replacement log: %v", err)
 	}
-	if next.FileID == logs.FileID {
-		t.Fatal("expected next poll to switch to replacement file")
+	if next.FileID != logs.FileID {
+		t.Fatal("expected next poll to stay on replacement file")
 	}
-	if strings.Join(next.Lines, ",") != "third" {
-		t.Fatalf("expected replacement line, got %#v", next.Lines)
+	if len(next.Lines) != 0 {
+		t.Fatalf("expected no repeated replacement lines, got %#v", next.Lines)
 	}
 }
 

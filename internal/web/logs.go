@@ -73,14 +73,44 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 	}
 	if logPathRotatedSinceSnapshot(filePath, currentPhysicalFileID) {
 		var drainedLines []string
-		drainedLines, consumedOffset, err = drainRotatedLogDescriptor(file, consumedOffset)
+		drainedLines, _, err = drainRotatedLogDescriptor(file, consumedOffset)
 		if err != nil {
 			return logResponse{}, err
 		}
 		lines = append(lines, drainedLines...)
+
+		replacementLogs, err := readReplacementLogAfterRotation(filePath)
+		if err != nil {
+			return logResponse{}, err
+		}
+		replacementLogs.Lines = append(lines, replacementLogs.Lines...)
+		return replacementLogs, nil
 	}
 	return logResponse{
 		FileID: currentFileID,
+		Offset: consumedOffset,
+		Size:   consumedOffset,
+		Lines:  lines,
+	}, nil
+}
+
+func readReplacementLogAfterRotation(filePath string) (logResponse, error) {
+	file, info, generation, err := openStableLogSnapshot(filePath)
+	if err != nil {
+		return logResponse{}, err
+	}
+	defer file.Close()
+
+	if info.IsDir() {
+		return logResponse{}, errors.New("log path is a directory")
+	}
+
+	lines, consumedOffset, err := readIncrementalLogLines(file, 0, info.Size())
+	if err != nil {
+		return logResponse{}, err
+	}
+	return logResponse{
+		FileID: logFileID(info, generation),
 		Offset: consumedOffset,
 		Size:   consumedOffset,
 		Lines:  lines,
