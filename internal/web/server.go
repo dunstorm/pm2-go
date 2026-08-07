@@ -332,11 +332,12 @@ func (server *Server) handleProcessLogs(w http.ResponseWriter, r *http.Request, 
 	}
 
 	offset := parseInt64Query(r, "offset", 0)
+	fileID := r.URL.Query().Get("fileId")
 	tail := parseIntQuery(r, "tail", 200)
 	if tail > 1000 {
 		tail = 1000
 	}
-	logs, err := read(filePath, offset, tail)
+	logs, err := read(filePath, offset, fileID, tail)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "failed to read log file")
 		return

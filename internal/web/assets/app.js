@@ -13,6 +13,7 @@ const state = {
   readOnly: false,
   logStream: "both",
   logOffsets: { out: 0, err: 0, both: 0 },
+  logFileIds: { out: "", err: "", both: "" },
   logLines: { out: [], err: [], both: [] },
   logLive: true,
   logQuery: "",
@@ -351,9 +352,10 @@ async function loadBothStreams(request, reset) {
   try {
     const data = await fetchLogStream(request.processId, "both", 360);
     if (!isCurrentLogRequest(request)) return;
+    const rotated = updateLogCursor("both", data);
     state.logOffsets.both = data.offset || 0;
     const incoming = Array.isArray(data.lines) ? data.lines : [];
-    if (reset) {
+    if (reset || rotated) {
       state.logLines.both = incoming;
     } else if (incoming.length > 0) {
       state.logLines.both = state.logLines.both.concat(incoming).slice(-1200);
@@ -371,15 +373,19 @@ async function loadBothStreams(request, reset) {
   const incoming = [];
 
   if (outResult.status === "fulfilled") {
+    const rotated = updateLogCursor("out", outResult.value);
     state.logOffsets.out = outResult.value.offset || 0;
     incoming.push(...(outResult.value.lines || []).map((line) => `[stdout] ${line}`));
+    if (rotated) reset = true;
   } else if (reset) {
     incoming.push(`[stdout] unavailable: ${outResult.reason.message}`);
   }
 
   if (errResult.status === "fulfilled") {
+    const rotated = updateLogCursor("err", errResult.value);
     state.logOffsets.err = errResult.value.offset || 0;
     incoming.push(...(errResult.value.lines || []).map((line) => `[stderr] ${line}`));
+    if (rotated) reset = true;
   } else if (reset) {
     incoming.push(`[stderr] unavailable: ${errResult.reason.message}`);
   }
@@ -395,9 +401,10 @@ async function loadOneStream(request, reset) {
   const stream = request.stream;
   const data = await fetchLogStream(request.processId, stream, 360);
   if (!isCurrentLogRequest(request)) return;
+  const rotated = updateLogCursor(stream, data);
   state.logOffsets[stream] = data.offset || 0;
   const incoming = Array.isArray(data.lines) ? data.lines : [];
-  if (reset) {
+  if (reset || rotated) {
     state.logLines[stream] = incoming;
   } else if (incoming.length > 0) {
     state.logLines[stream] = state.logLines[stream].concat(incoming).slice(-1200);
@@ -408,9 +415,17 @@ function fetchLogStream(processId, stream, tail) {
   const params = new URLSearchParams({
     stream,
     offset: String(state.logOffsets[stream] || 0),
+    fileId: state.logFileIds[stream] || "",
     tail: String(tail),
   });
   return fetchJSON(`/api/processes/${processId}/logs?${params}`);
+}
+
+function updateLogCursor(stream, data) {
+  const nextFileId = data.fileId || "";
+  const previousFileId = state.logFileIds[stream] || "";
+  state.logFileIds[stream] = nextFileId;
+  return Boolean(previousFileId && nextFileId && previousFileId !== nextFileId);
 }
 
 function isCurrentDetailRequest(processId, seq) {
@@ -952,6 +967,7 @@ function renderLogs() {
 
 function resetLogs(render = true) {
   state.logOffsets = { out: 0, err: 0, both: 0 };
+  state.logFileIds = { out: "", err: "", both: "" };
   state.logLines = { out: [], err: [], both: [] };
   if (render) renderLogs();
 }

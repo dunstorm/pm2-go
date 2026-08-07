@@ -3,9 +3,11 @@ package web
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
 )
@@ -13,13 +15,20 @@ import (
 const maxInitialLogBytes = 256 * 1024
 
 type logResponse struct {
+	FileID string   `json:"fileId"`
 	Offset int64    `json:"offset"`
 	Size   int64    `json:"size"`
 	Lines  []string `json:"lines"`
 }
 
-func readLog(filePath string, offset int64, tailLines int) (logResponse, error) {
-	info, err := os.Stat(filePath)
+func readLog(filePath string, offset int64, fileID string, tailLines int) (logResponse, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return logResponse{}, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
 	if err != nil {
 		return logResponse{}, err
 	}
@@ -27,18 +36,16 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 		return logResponse{}, errors.New("log path is a directory")
 	}
 	size := info.Size()
+	currentFileID := logFileID(info)
+	if fileID != "" && fileID != currentFileID {
+		offset = 0
+	}
 	if offset < 0 || offset > size {
 		offset = 0
 	}
 	if tailLines <= 0 {
 		tailLines = 200
 	}
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		return logResponse{}, err
-	}
-	defer file.Close()
 
 	initialRead := offset == 0
 	readStart := offset
@@ -66,14 +73,15 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 	}
 	consumedOffset := readStart + int64(len(contents))
 	return logResponse{
+		FileID: currentFileID,
 		Offset: consumedOffset,
 		Size:   consumedOffset,
 		Lines:  lines,
 	}, nil
 }
 
-func readCombinedLog(filePath string, offset int64, tailLines int) (logResponse, error) {
-	logs, err := readLog(filePath, offset, tailLines)
+func readCombinedLog(filePath string, offset int64, fileID string, tailLines int) (logResponse, error) {
+	logs, err := readLog(filePath, offset, fileID, tailLines)
 	if err != nil {
 		return logResponse{}, err
 	}
@@ -88,6 +96,13 @@ func readCombinedLog(filePath string, offset int64, tailLines int) (logResponse,
 	}
 	logs.Lines = lines
 	return logs, nil
+}
+
+func logFileID(info os.FileInfo) string {
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		return fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
+	}
+	return ""
 }
 
 func splitLogLines(contents string) []string {

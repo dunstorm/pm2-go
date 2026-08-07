@@ -280,7 +280,7 @@ func TestReadLogHonorsTailAfterBoundedInitialRead(t *testing.T) {
 		t.Fatalf("write log: %v", err)
 	}
 
-	logs, err := readLog(logFile, 0, 5)
+	logs, err := readLog(logFile, 0, "", 5)
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestReadLogReturnsConsumedOffset(t *testing.T) {
 		t.Fatalf("write log: %v", err)
 	}
 
-	logs, err := readLog(logFile, int64(len("first\n")), 10)
+	logs, err := readLog(logFile, int64(len("first\n")), "", 10)
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}
@@ -311,6 +311,42 @@ func TestReadLogReturnsConsumedOffset(t *testing.T) {
 	}
 	if len(logs.Lines) != 1 || logs.Lines[0] != "second" {
 		t.Fatalf("expected incremental line, got %#v", logs.Lines)
+	}
+}
+
+func TestReadLogResetsOffsetWhenFileChanges(t *testing.T) {
+	dir := t.TempDir()
+	logFile := dir + "/rotated.log"
+	if err := os.WriteFile(logFile, []byte("first\n"), 0600); err != nil {
+		t.Fatalf("write original log: %v", err)
+	}
+
+	first, err := readLog(logFile, 0, "", 10)
+	if err != nil {
+		t.Fatalf("read original log: %v", err)
+	}
+	if first.FileID == "" {
+		t.Fatal("expected file id")
+	}
+	if err := os.Rename(logFile, logFile+".1"); err != nil {
+		t.Fatalf("rotate log: %v", err)
+	}
+	if err := os.WriteFile(logFile, []byte("second\n"), 0600); err != nil {
+		t.Fatalf("write replacement log: %v", err)
+	}
+
+	logs, err := readLog(logFile, first.Offset, first.FileID, 10)
+	if err != nil {
+		t.Fatalf("read replacement log: %v", err)
+	}
+	if logs.FileID == first.FileID {
+		t.Fatal("expected replacement log to have a different file id")
+	}
+	if logs.Offset != int64(len("second\n")) {
+		t.Fatalf("expected replacement offset, got %d", logs.Offset)
+	}
+	if len(logs.Lines) != 1 || logs.Lines[0] != "second" {
+		t.Fatalf("expected replacement line, got %#v", logs.Lines)
 	}
 }
 

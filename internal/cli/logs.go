@@ -6,11 +6,15 @@ package cli
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
+	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/fatih/color"
 
 	"github.com/spf13/cobra"
@@ -52,8 +56,8 @@ var logsCmd = &cobra.Command{
 
 			combinedLogPath := logstore.CombinedPath(process.LogFilePath)
 			if _, err := os.Stat(combinedLogPath); err == nil {
-				color.Cyan("%s last %d lines", combinedLogPath, tail)
-				entries, err := logstore.ReadEntries(combinedLogPath, tail)
+				color.Cyan("%s merged last %d lines", combinedLogPath, tail)
+				entries, err := mergedLogEntries(process, combinedLogPath, tail)
 				if err != nil {
 					logger.Error().Msg(err.Error())
 					return
@@ -128,6 +132,136 @@ func printCombinedLogEntry(logPrefix string, green func(a ...interface{}) string
 		prefixColor = red
 	}
 	fmt.Println(prefixColor(logPrefix), logstore.FormatEntry(entry))
+}
+
+type sortableLogEntry struct {
+	entry      logstore.Entry
+	occurredAt time.Time
+	order      int
+}
+
+func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]logstore.Entry, error) {
+	combinedEntries, err := logstore.ReadEntries(combinedLogPath, tail)
+	if err != nil {
+		return nil, err
+	}
+	if tail <= 0 || len(combinedEntries) >= tail {
+		return combinedEntries, nil
+	}
+
+	legacyEntries, err := legacyLogEntries(process, tail)
+	if err != nil {
+		return nil, err
+	}
+	if len(legacyEntries) == 0 {
+		return combinedEntries, nil
+	}
+
+	combinedKeys := make(map[string]struct{}, len(combinedEntries))
+	for _, entry := range combinedEntries {
+		combinedKeys[logEntryKey(entry)] = struct{}{}
+	}
+
+	records := make([]sortableLogEntry, 0, len(legacyEntries)+len(combinedEntries))
+	order := 0
+	for _, entry := range legacyEntries {
+		if _, exists := combinedKeys[logEntryKey(entry)]; exists {
+			continue
+		}
+		records = append(records, sortableLogEntry{
+			entry:      entry,
+			occurredAt: logEntryTime(entry),
+			order:      order,
+		})
+		order++
+	}
+	for _, entry := range combinedEntries {
+		records = append(records, sortableLogEntry{
+			entry:      entry,
+			occurredAt: logEntryTime(entry),
+			order:      order,
+		})
+		order++
+	}
+
+	sort.SliceStable(records, func(i, j int) bool {
+		left := records[i]
+		right := records[j]
+		if !left.occurredAt.IsZero() && !right.occurredAt.IsZero() && !left.occurredAt.Equal(right.occurredAt) {
+			return left.occurredAt.Before(right.occurredAt)
+		}
+		return left.order < right.order
+	})
+	if len(records) > tail {
+		records = records[len(records)-tail:]
+	}
+
+	entries := make([]logstore.Entry, 0, len(records))
+	for _, record := range records {
+		entries = append(entries, record.entry)
+	}
+	return entries, nil
+}
+
+func legacyLogEntries(process *pb.Process, tail int) ([]logstore.Entry, error) {
+	stdoutEntries, err := plainLogEntries(process.LogFilePath, logstore.StdoutStream, tail)
+	if err != nil {
+		return nil, err
+	}
+	stderrEntries, err := plainLogEntries(process.ErrFilePath, logstore.StderrStream, tail)
+	if err != nil {
+		return nil, err
+	}
+	return append(stdoutEntries, stderrEntries...), nil
+}
+
+func plainLogEntries(filename, stream string, tail int) ([]logstore.Entry, error) {
+	lines, err := utils.GetLogs(filename, tail)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	entries := make([]logstore.Entry, 0, len(lines))
+	for _, line := range lines {
+		timestamp, message, ok := strings.Cut(line, ": ")
+		if !ok || len(timestamp) != len("2006-01-02 15:04:05") {
+			entries = append(entries, logstore.Entry{
+				Stream: stream,
+				Line:   line,
+			})
+			continue
+		}
+		entries = append(entries, logstore.Entry{
+			Timestamp: timestamp,
+			Stream:    stream,
+			Line:      message,
+		})
+	}
+	return entries, nil
+}
+
+func logEntryKey(entry logstore.Entry) string {
+	return entry.Stream + "\x00" + logEntrySecond(entry) + "\x00" + entry.Line
+}
+
+func logEntrySecond(entry logstore.Entry) string {
+	if parsed, err := time.Parse(time.RFC3339Nano, entry.Timestamp); err == nil {
+		return parsed.Local().Format("2006-01-02 15:04:05")
+	}
+	return entry.Timestamp
+}
+
+func logEntryTime(entry logstore.Entry) time.Time {
+	if parsed, err := time.Parse(time.RFC3339Nano, entry.Timestamp); err == nil {
+		return parsed.Local()
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", entry.Timestamp, time.Local); err == nil {
+		return parsed
+	}
+	return time.Time{}
 }
 
 func init() {

@@ -24,9 +24,18 @@ builds:
       - darwin
 
 archives:
-  - formats:
+  - id: pm2-go
+    ids:
+      - pm2-go
+    formats:
       - binary
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}"
+  - id: pm2-go-web
+    ids:
+      - pm2-go-web
+    formats:
+      - binary
+    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: 'checksums.txt'

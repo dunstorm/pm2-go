@@ -20,22 +20,29 @@ type ProcessSource interface {
 }
 
 type GRPCProcessSource struct {
-	Port    int
-	Timeout time.Duration
+	Port          int
+	Timeout       time.Duration
+	ActionTimeout time.Duration
 }
+
+const (
+	defaultReadTimeout   = 2 * time.Second
+	defaultActionTimeout = 5 * time.Second
+)
 
 func NewGRPCProcessSource(port int) GRPCProcessSource {
 	if port == 0 {
 		port = DefaultDaemonPort
 	}
 	return GRPCProcessSource{
-		Port:    port,
-		Timeout: 2 * time.Second,
+		Port:          port,
+		Timeout:       defaultReadTimeout,
+		ActionTimeout: defaultActionTimeout,
 	}
 }
 
 func (source GRPCProcessSource) ListProcesses(ctx context.Context) ([]*pb.Process, error) {
-	ctx, manager, closeConn, err := source.manager(ctx)
+	ctx, manager, closeConn, err := source.manager(ctx, source.readTimeout())
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +56,7 @@ func (source GRPCProcessSource) ListProcesses(ctx context.Context) ([]*pb.Proces
 }
 
 func (source GRPCProcessSource) FindProcess(ctx context.Context, id int32) (*pb.Process, error) {
-	ctx, manager, closeConn, err := source.manager(ctx)
+	ctx, manager, closeConn, err := source.manager(ctx, source.readTimeout())
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +66,7 @@ func (source GRPCProcessSource) FindProcess(ctx context.Context, id int32) (*pb.
 }
 
 func (source GRPCProcessSource) StopProcess(ctx context.Context, id int32) (bool, error) {
-	ctx, manager, closeConn, err := source.manager(ctx)
+	ctx, manager, closeConn, err := source.manager(ctx, source.actionTimeout())
 	if err != nil {
 		return false, err
 	}
@@ -73,7 +80,7 @@ func (source GRPCProcessSource) StopProcess(ctx context.Context, id int32) (bool
 }
 
 func (source GRPCProcessSource) RestartProcess(ctx context.Context, process *pb.Process, graceful bool) (*pb.Process, error) {
-	ctx, manager, closeConn, err := source.manager(ctx)
+	ctx, manager, closeConn, err := source.manager(ctx, source.actionTimeout())
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +90,7 @@ func (source GRPCProcessSource) RestartProcess(ctx context.Context, process *pb.
 }
 
 func (source GRPCProcessSource) DeleteProcess(ctx context.Context, id int32) (bool, error) {
-	ctx, manager, closeConn, err := source.manager(ctx)
+	ctx, manager, closeConn, err := source.manager(ctx, source.actionTimeout())
 	if err != nil {
 		return false, err
 	}
@@ -96,12 +103,25 @@ func (source GRPCProcessSource) DeleteProcess(ctx context.Context, id int32) (bo
 	return resp.GetSuccess(), nil
 }
 
-func (source GRPCProcessSource) manager(ctx context.Context) (context.Context, pb.ProcessManagerClient, func(), error) {
+func (source GRPCProcessSource) readTimeout() time.Duration {
 	timeout := source.Timeout
 	if timeout <= 0 {
-		timeout = 2 * time.Second
+		return defaultReadTimeout
 	}
+	return timeout
+}
 
+func (source GRPCProcessSource) actionTimeout() time.Duration {
+	if source.ActionTimeout > 0 {
+		return source.ActionTimeout
+	}
+	if source.Timeout > 0 {
+		return source.Timeout
+	}
+	return defaultActionTimeout
+}
+
+func (source GRPCProcessSource) manager(ctx context.Context, timeout time.Duration) (context.Context, pb.ProcessManagerClient, func(), error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 
 	conn, err := grpc.NewClient(
