@@ -13,7 +13,7 @@ import (
 )
 
 const maxIncrementalLogReadBytes = 1024 * 1024
-const maxIncrementalLogRecordBytes = 2 * 1024 * 1024
+const maxIncrementalLogRecordBytes = 8 * 1024 * 1024
 
 type logResponse struct {
 	FileID string   `json:"fileId"`

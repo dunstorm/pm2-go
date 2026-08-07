@@ -181,14 +181,8 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 	}
 
 	for {
-		for line, err := tail.reader.ReadString('\n'); err != io.EOF; line, err = tail.reader.ReadString('\n') {
-			entry, parseErr := ParseLine(strings.TrimRight(line, "\n"))
-			if parseErr == nil {
-				handle(entry)
-			}
-			if err != nil {
-				break
-			}
+		if err := readAvailableTailEntries(tail.reader, handle); err != nil {
+			return err
 		}
 		pos, err := tail.file.Seek(0, io.SeekCurrent)
 		if err != nil {
@@ -205,6 +199,9 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 			}
 			nextGeneration := ReadCursorGeneration(filename)
 			if tail.generation != nextGeneration {
+				if err := readAvailableTailEntries(tail.reader, handle); err != nil {
+					return err
+				}
 				if err := tail.reopen(filename); err != nil {
 					return err
 				}
@@ -213,6 +210,9 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 
 			nextID := fileIdentity(info)
 			if tail.id != "" && nextID != "" && tail.id != nextID {
+				if err := readAvailableTailEntries(tail.reader, handle); err != nil {
+					return err
+				}
 				if err := tail.reopen(filename); err != nil {
 					return err
 				}
@@ -232,6 +232,24 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 				tail.size = newSize
 				break
 			}
+		}
+	}
+}
+
+func readAvailableTailEntries(reader *bufio.Reader, handle func(Entry)) error {
+	for {
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			return nil
+		}
+		if line != "" {
+			entry, parseErr := ParseLine(strings.TrimRight(line, "\n"))
+			if parseErr == nil {
+				handle(entry)
+			}
+		}
+		if err != nil {
+			return err
 		}
 	}
 }

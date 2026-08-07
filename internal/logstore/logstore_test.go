@@ -307,6 +307,62 @@ func TestTailEntriesFromCursorResetsOnFileIdentityChange(t *testing.T) {
 	}
 }
 
+func TestTailEntriesFromCursorDrainsRotatedDescriptorBeforeReopen(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	firstLine := `{"stream":"stdout","line":"first"}` + "\n"
+	if err := os.WriteFile(filePath, []byte(firstLine), 0600); err != nil {
+		t.Fatalf("write initial log: %v", err)
+	}
+
+	_, cursor, err := ReadEntriesWithCursor(filePath, 0)
+	if err != nil {
+		t.Fatalf("read cursor: %v", err)
+	}
+	if cursor.FileID == "" {
+		t.Skip("file identity is unavailable on this platform")
+	}
+
+	entries := make(chan Entry, 2)
+	errs := make(chan error, 1)
+	go func() {
+		errs <- TailEntriesFromCursor(filePath, cursor, func(entry Entry) {
+			entries <- entry
+		})
+	}()
+
+	time.Sleep(250 * time.Millisecond)
+	secondLine := `{"stream":"stdout","line":"second"}`
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatalf("open log for append: %v", err)
+	}
+	if _, err := file.WriteString(secondLine + "\n"); err != nil {
+		_ = file.Close()
+		t.Fatalf("append pending line: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close appended log: %v", err)
+	}
+	if err := os.Rename(filePath, filePath+".0"); err != nil {
+		t.Fatalf("rotate log: %v", err)
+	}
+	thirdLine := `{"stream":"stderr","line":"third"}`
+	if err := os.WriteFile(filePath, []byte(thirdLine+"\n"), 0600); err != nil {
+		t.Fatalf("write replacement log: %v", err)
+	}
+
+	select {
+	case entry := <-entries:
+		if entry.Stream != StdoutStream || entry.Line != "second" {
+			t.Fatalf("expected drained rotated entry, got %#v", entry)
+		}
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for drained rotated entry")
+	}
+}
+
 func TestTailEntriesFromStartsAtOffset(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	firstLine := `{"stream":"stdout","line":"first"}` + "\n"

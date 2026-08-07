@@ -403,6 +403,28 @@ func TestReadLogRetainsIncompleteOversizedIncrementalRecord(t *testing.T) {
 	}
 }
 
+func TestReadLogConsumesJSONExpandedIncrementalRecord(t *testing.T) {
+	logFile := t.TempDir() + "/incremental-json-expanded.log"
+	prefix := "first\n"
+	expandedLine := strings.Repeat(`\u003c`, maxIncrementalLogReadBytes+512)
+	contents := prefix + expandedLine + "\nsecond\n"
+	if err := os.WriteFile(logFile, []byte(contents), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	logs, err := readLog(logFile, int64(len(prefix)), "", 10)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	expectedOffset := int64(len(prefix) + len(expandedLine) + 1)
+	if logs.Offset != expectedOffset {
+		t.Fatalf("expected expanded record offset %d, got %d", expectedOffset, logs.Offset)
+	}
+	if len(logs.Lines) != 1 || logs.Lines[0] != expandedLine {
+		t.Fatalf("expected expanded record, got %d lines with length %d", len(logs.Lines), len(strings.Join(logs.Lines, "")))
+	}
+}
+
 func TestReadLogResetsOffsetWhenFileChanges(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/rotated.log"
