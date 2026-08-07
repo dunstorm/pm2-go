@@ -30,7 +30,7 @@ func TestMergedLogEntriesIncludesLegacyWhenCombinedIsShort(t *testing.T) {
 		`{"timestamp":"`+baseTime.Add(3*time.Second).Format(time.RFC3339Nano)+`","stream":"stderr","line":"failed"}`,
 	)
 
-	entries, err := mergedLogEntries(&pb.Process{
+	entries, _, err := mergedLogEntries(&pb.Process{
 		LogFilePath: outPath,
 		ErrFilePath: errPath,
 	}, combinedPath, 4)
@@ -70,7 +70,7 @@ func TestMergedLogEntriesPreservesDuplicateLegacyOccurrences(t *testing.T) {
 		`{"timestamp":"`+baseTime.Add(100*time.Millisecond).Format(time.RFC3339Nano)+`","stream":"stdout","line":"repeat"}`,
 	)
 
-	entries, err := mergedLogEntries(&pb.Process{
+	entries, _, err := mergedLogEntries(&pb.Process{
 		LogFilePath: outPath,
 		ErrFilePath: errPath,
 	}, combinedPath, 4)
@@ -89,6 +89,25 @@ func TestMergedLogEntriesPreservesDuplicateLegacyOccurrences(t *testing.T) {
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestMergedLogEntriesReturnsCombinedSnapshotOffset(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	contents := `{"timestamp":"2026-08-07T10:00:00Z","stream":"stdout","line":"ready"}` + "\n"
+	writePlainLog(t, combinedPath, strings.TrimRight(contents, "\n"))
+
+	_, offset, err := mergedLogEntries(&pb.Process{
+		LogFilePath: outPath,
+		ErrFilePath: filepath.Join(dir, "api-err.log"),
+	}, combinedPath, 10)
+	if err != nil {
+		t.Fatalf("merge log entries: %v", err)
+	}
+	if offset != int64(len(contents)) {
+		t.Fatalf("expected snapshot offset %d, got %d", len(contents), offset)
 	}
 }
 

@@ -111,9 +111,14 @@ func FormatEntry(entry Entry) string {
 }
 
 func ReadEntries(filename string, tail int) ([]Entry, error) {
-	lines, err := readTailLines(filename, tail)
+	entries, _, err := ReadEntriesWithOffset(filename, tail)
+	return entries, err
+}
+
+func ReadEntriesWithOffset(filename string, tail int) ([]Entry, int64, error) {
+	lines, offset, err := readTailLines(filename, tail)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	entries := make([]Entry, 0, len(lines))
@@ -123,19 +128,32 @@ func ReadEntries(filename string, tail int) ([]Entry, error) {
 		}
 		entry, err := ParseLine(line)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		entries = append(entries, entry)
 	}
-	return entries, nil
+	return entries, offset, nil
 }
 
 func TailEntries(filename string, handle func(Entry)) error {
-	tail, err := openTailedFile(filename, true)
+	return TailEntriesFrom(filename, -1, handle)
+}
+
+func TailEntriesFrom(filename string, offset int64, handle func(Entry)) error {
+	tail, err := openTailedFile(filename, offset < 0)
 	if err != nil {
 		return err
 	}
 	defer tail.close()
+	if offset >= 0 {
+		if offset > tail.size {
+			offset = 0
+		}
+		if _, err := tail.file.Seek(offset, io.SeekStart); err != nil {
+			return err
+		}
+		tail.reader = bufio.NewReader(tail.file)
+	}
 
 	for {
 		for line, err := tail.reader.ReadString('\n'); err != io.EOF; line, err = tail.reader.ReadString('\n') {
@@ -245,20 +263,24 @@ func fileIdentity(info os.FileInfo) string {
 	return ""
 }
 
-func readTailLines(filename string, tail int) ([]string, error) {
+func readTailLines(filename string, tail int) ([]string, int64, error) {
 	if tail <= 0 {
-		return nil, nil
+		info, err := os.Stat(filename)
+		if err != nil {
+			return nil, 0, err
+		}
+		return nil, info.Size(), nil
 	}
 
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	offset := info.Size() - 256*1024
@@ -266,7 +288,7 @@ func readTailLines(filename string, tail int) ([]string, error) {
 		offset = 0
 	}
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	reader := bufio.NewReader(file)
 	if offset > 0 {
@@ -280,10 +302,14 @@ func readTailLines(filename string, tail int) ([]string, error) {
 		lines = append(lines, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(lines) > tail {
 		lines = lines[len(lines)-tail:]
 	}
-	return lines, nil
+	consumedOffset, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, 0, err
+	}
+	return lines, consumedOffset, nil
 }

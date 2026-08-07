@@ -57,7 +57,7 @@ var logsCmd = &cobra.Command{
 			combinedLogPath := logstore.CombinedPath(process.LogFilePath)
 			if _, err := os.Stat(combinedLogPath); err == nil {
 				color.Cyan("%s merged last %d lines", combinedLogPath, tail)
-				entries, err := mergedLogEntries(process, combinedLogPath, tail)
+				entries, tailOffset, err := mergedLogEntries(process, combinedLogPath, tail)
 				if err != nil {
 					logger.Error().Msg(err.Error())
 					return
@@ -69,7 +69,7 @@ var logsCmd = &cobra.Command{
 				var wg sync.WaitGroup
 				wg.Add(1)
 				go func() {
-					if err := logstore.TailEntries(combinedLogPath, func(entry logstore.Entry) {
+					if err := logstore.TailEntriesFrom(combinedLogPath, tailOffset, func(entry logstore.Entry) {
 						printCombinedLogEntry(logPrefix, green, red, entry)
 					}); err != nil {
 						logger.Error().Msg(err.Error())
@@ -140,21 +140,21 @@ type sortableLogEntry struct {
 	order      int
 }
 
-func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]logstore.Entry, error) {
-	combinedEntries, err := logstore.ReadEntries(combinedLogPath, tail)
+func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]logstore.Entry, int64, error) {
+	combinedEntries, tailOffset, err := logstore.ReadEntriesWithOffset(combinedLogPath, tail)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if tail <= 0 || len(combinedEntries) >= tail {
-		return combinedEntries, nil
+		return combinedEntries, tailOffset, nil
 	}
 
 	legacyEntries, err := legacyLogEntries(process, tail)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(legacyEntries) == 0 {
-		return combinedEntries, nil
+		return combinedEntries, tailOffset, nil
 	}
 
 	combinedKeys := make(map[string]int, len(combinedEntries))
@@ -202,7 +202,7 @@ func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]
 	for _, record := range records {
 		entries = append(entries, record.entry)
 	}
-	return entries, nil
+	return entries, tailOffset, nil
 }
 
 func legacyLogEntries(process *pb.Process, tail int) ([]logstore.Entry, error) {
