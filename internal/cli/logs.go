@@ -218,7 +218,7 @@ func legacyLogEntries(process *pb.Process, tail int) ([]logstore.Entry, error) {
 }
 
 func plainLogEntries(filename, stream string, tail int) ([]logstore.Entry, error) {
-	lines, err := utils.GetLogs(filename, tail)
+	lines, _, err := logstore.ReadLinesWithCursor(filename, tail)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil

@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,35 @@ func TestMergedLogEntriesPreservesDuplicateLegacyOccurrences(t *testing.T) {
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("expected %v, got %v", want, got)
+	}
+}
+
+func TestMergedLogEntriesReadsLegacyTailBeyondFixedByteWindow(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	errPath := filepath.Join(dir, "api-err.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	baseTime := time.Date(2026, 8, 7, 10, 0, 0, 0, time.Local)
+
+	lines := make([]string, 0, 30)
+	for i := 0; i < 30; i++ {
+		lines = append(lines, baseTime.Add(time.Duration(i)*time.Second).Format("2006-01-02 15:04:05")+": line-"+strconv.Itoa(i)+" "+strings.Repeat("x", 80))
+	}
+	writePlainLog(t, outPath, lines...)
+	writePlainLog(t, combinedPath)
+
+	entries, _, err := mergedLogEntries(&pb.Process{
+		LogFilePath: outPath,
+		ErrFilePath: errPath,
+	}, combinedPath, 20)
+	if err != nil {
+		t.Fatalf("merge log entries: %v", err)
+	}
+	if len(entries) != 20 {
+		t.Fatalf("expected 20 legacy entries, got %d", len(entries))
+	}
+	if !strings.Contains(entries[0].Line, "line-10") || !strings.Contains(entries[19].Line, "line-29") {
+		t.Fatalf("expected full legacy tail from line-10 through line-29, got first=%q last=%q", entries[0].Line, entries[19].Line)
 	}
 }
 
