@@ -1,7 +1,6 @@
 package server
 
 import (
-	"io"
 	"os"
 	"strconv"
 	"sync"
@@ -47,44 +46,6 @@ func refreshProcessMetrics(handler *Handler, p *pb.Process, force bool) (int64, 
 	handler.mu.Unlock()
 
 	return stats.MemoryBytes, nil
-}
-
-func rotateLogFile(filename, rotatedFilename string) (bool, error) {
-	if filename == "" || rotatedFilename == "" {
-		return false, nil
-	}
-
-	source, err := os.Open(filename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	defer source.Close()
-
-	mode := os.FileMode(0640)
-	if info, err := source.Stat(); err == nil {
-		mode = info.Mode().Perm()
-	}
-
-	target, err := os.OpenFile(rotatedFilename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
-	if err != nil {
-		return false, err
-	}
-	_, copyErr := io.Copy(target, source)
-	closeErr := target.Close()
-	if copyErr != nil {
-		return false, copyErr
-	}
-	if closeErr != nil {
-		return false, closeErr
-	}
-
-	if err := os.Truncate(filename, 0); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func restartProcess(handler *Handler, p *pb.Process) {
@@ -285,12 +246,12 @@ func startScheduler(handler *Handler) {
 	// handle max log file, max log size
 	handleMaxLog := func(p *pb.Process) {
 		defer wg.Done()
-		// if LogFilePath exceeds LogRotateSize, copy/truncate files and add logfilecount
+		// if LogFilePath exceeds LogRotateSize, rotate files and add logfilecount
 		combinedLogPath := logstore.CombinedPath(p.LogFilePath)
 		plainLogFileSize := utils.FileSize(p.LogFilePath) + utils.FileSize(p.ErrFilePath)
 		if config.LogRotate && plainLogFileSize > int64(config.LogRotateSize) {
 			rotatedLogPath := p.LogFilePath + "." + strconv.Itoa(int(p.LogFileCount))
-			rotated, err := rotateLogFile(p.LogFilePath, rotatedLogPath)
+			rotated, err := processrunner.RotateLogFile(p.LogFilePath, rotatedLogPath)
 			if err != nil {
 				handler.logger.Error().Msgf("Error while rotating log file %s: %s", p.LogFilePath, err)
 			} else if rotated {
@@ -299,7 +260,7 @@ func startScheduler(handler *Handler) {
 
 			// do the same for error log file
 			rotatedErrPath := p.ErrFilePath + "." + strconv.Itoa(int(p.LogFileCount))
-			rotated, err = rotateLogFile(p.ErrFilePath, rotatedErrPath)
+			rotated, err = processrunner.RotateLogFile(p.ErrFilePath, rotatedErrPath)
 			if err != nil {
 				handler.logger.Error().Msgf("Error while rotating log file %s: %s", p.ErrFilePath, err)
 			} else if rotated {
@@ -307,7 +268,7 @@ func startScheduler(handler *Handler) {
 			}
 
 			rotatedCombinedPath := combinedLogPath + "." + strconv.Itoa(int(p.LogFileCount))
-			rotated, err = rotateLogFile(combinedLogPath, rotatedCombinedPath)
+			rotated, err = processrunner.RotateLogFile(combinedLogPath, rotatedCombinedPath)
 			if err != nil {
 				handler.logger.Error().Msgf("Error while rotating log file %s: %s", combinedLogPath, err)
 			} else if rotated {

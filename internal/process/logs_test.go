@@ -11,24 +11,27 @@ import (
 	"github.com/dunstorm/pm2-go/internal/logstore"
 )
 
+func openManagedTestLogFile(t *testing.T, path string) *managedLogFile {
+	t.Helper()
+
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatalf("open log file %s: %v", path, err)
+	}
+	logFile := registerManagedLogFile(path, file)
+	t.Cleanup(logFile.close)
+	return logFile
+}
+
 func TestProcessStreamLogsWritesPlainAndCombinedLogs(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "api-out.log")
 	combinedPath := filepath.Join(dir, "api-combined.jsonl")
 
-	outFile, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open out log: %v", err)
-	}
+	outFile := openManagedTestLogFile(t, outPath)
 	errPath := filepath.Join(dir, "api-err.log")
-	errFile, err := os.OpenFile(errPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open err log: %v", err)
-	}
-	combinedFile, err := os.OpenFile(combinedPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open combined log: %v", err)
-	}
+	errFile := openManagedTestLogFile(t, errPath)
+	combinedFile := openManagedTestLogFile(t, combinedPath)
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("open stdout pipe: %v", err)
@@ -50,15 +53,6 @@ func TestProcessStreamLogsWritesPlainAndCombinedLogs(t *testing.T) {
 	sink := newCombinedLogSink(combinedFile)
 	processStreamLogs(stdoutReader, stderrReader, outFile, errFile, sink)
 	sink.close()
-	if err := outFile.Close(); err != nil {
-		t.Fatalf("close out log: %v", err)
-	}
-	if err := errFile.Close(); err != nil {
-		t.Fatalf("close err log: %v", err)
-	}
-	if err := combinedFile.Close(); err != nil {
-		t.Fatalf("close combined log: %v", err)
-	}
 
 	plain, err := os.ReadFile(outPath)
 	if err != nil {
@@ -85,19 +79,10 @@ func TestProcessStreamLogsWritesPlainAndCombinedLogs(t *testing.T) {
 
 func TestProcessStreamLogsMultiplexesStreamsBetweenBufferedLines(t *testing.T) {
 	dir := t.TempDir()
-	outFile, err := os.OpenFile(filepath.Join(dir, "api-out.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open out log: %v", err)
-	}
-	errFile, err := os.OpenFile(filepath.Join(dir, "api-err.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open err log: %v", err)
-	}
+	outFile := openManagedTestLogFile(t, filepath.Join(dir, "api-out.log"))
+	errFile := openManagedTestLogFile(t, filepath.Join(dir, "api-err.log"))
 	combinedPath := filepath.Join(dir, "api-combined.jsonl")
-	combinedFile, err := os.OpenFile(combinedPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open combined log: %v", err)
-	}
+	combinedFile := openManagedTestLogFile(t, combinedPath)
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("open stdout pipe: %v", err)
@@ -132,15 +117,6 @@ func TestProcessStreamLogsMultiplexesStreamsBetweenBufferedLines(t *testing.T) {
 	}
 	<-done
 	sink.close()
-	if err := outFile.Close(); err != nil {
-		t.Fatalf("close out log: %v", err)
-	}
-	if err := errFile.Close(); err != nil {
-		t.Fatalf("close err log: %v", err)
-	}
-	if err := combinedFile.Close(); err != nil {
-		t.Fatalf("close combined log: %v", err)
-	}
 
 	entries, err := logstore.ReadEntries(combinedPath, 10)
 	if err != nil {
@@ -166,19 +142,10 @@ func TestProcessStreamLogsMultiplexesStreamsBetweenBufferedLines(t *testing.T) {
 
 func TestProcessStreamLogsDrainsBusyStreams(t *testing.T) {
 	dir := t.TempDir()
-	outFile, err := os.OpenFile(filepath.Join(dir, "api-out.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open out log: %v", err)
-	}
-	errFile, err := os.OpenFile(filepath.Join(dir, "api-err.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open err log: %v", err)
-	}
+	outFile := openManagedTestLogFile(t, filepath.Join(dir, "api-out.log"))
+	errFile := openManagedTestLogFile(t, filepath.Join(dir, "api-err.log"))
 	combinedPath := filepath.Join(dir, "api-combined.jsonl")
-	combinedFile, err := os.OpenFile(combinedPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open combined log: %v", err)
-	}
+	combinedFile := openManagedTestLogFile(t, combinedPath)
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("open stdout pipe: %v", err)
@@ -212,15 +179,6 @@ func TestProcessStreamLogsDrainsBusyStreams(t *testing.T) {
 	}
 
 	sink.close()
-	if err := outFile.Close(); err != nil {
-		t.Fatalf("close out log: %v", err)
-	}
-	if err := errFile.Close(); err != nil {
-		t.Fatalf("close err log: %v", err)
-	}
-	if err := combinedFile.Close(); err != nil {
-		t.Fatalf("close combined log: %v", err)
-	}
 
 	entries, err := logstore.ReadEntries(combinedPath, lineCount*2)
 	if err != nil {
@@ -234,15 +192,9 @@ func TestProcessStreamLogsDrainsBusyStreams(t *testing.T) {
 func TestDrainBufferedLinesDrainsFairBoundedBatch(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "api-out.log")
-	outFile, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open out log: %v", err)
-	}
+	outFile := openManagedTestLogFile(t, outPath)
 	errPath := filepath.Join(dir, "api-err.log")
-	errFile, err := os.OpenFile(errPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
-	if err != nil {
-		t.Fatalf("open err log: %v", err)
-	}
+	errFile := openManagedTestLogFile(t, errPath)
 
 	streams := []*processLogStream{
 		{name: logstore.StdoutStream, file: outFile, buffer: []byte(strings.Repeat("out\n", 10))},
@@ -251,12 +203,6 @@ func TestDrainBufferedLinesDrainsFairBoundedBatch(t *testing.T) {
 	next := 0
 	if drained := drainBufferedLines(streams, nil, &next, 6); drained != 6 {
 		t.Fatalf("expected six drained lines, got %d", drained)
-	}
-	if err := outFile.Close(); err != nil {
-		t.Fatalf("close out log: %v", err)
-	}
-	if err := errFile.Close(); err != nil {
-		t.Fatalf("close err log: %v", err)
 	}
 
 	out, err := os.ReadFile(outPath)
@@ -272,6 +218,45 @@ func TestDrainBufferedLinesDrainsFairBoundedBatch(t *testing.T) {
 	}
 	if strings.Count(string(stderr), "\n") != 3 {
 		t.Fatalf("expected three stderr lines after fair drain, got %q", string(stderr))
+	}
+}
+
+func TestRotateLogFileReopensActiveManagedFile(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "api-combined.jsonl")
+	rotatedPath := logPath + ".0"
+	logFile := openManagedTestLogFile(t, logPath)
+
+	logFile.writePlainLine(time.Now(), defaultLogTimestampFormat, "before")
+	rotated, err := RotateLogFile(logPath, rotatedPath)
+	if err != nil {
+		t.Fatalf("rotate log: %v", err)
+	}
+	if !rotated {
+		t.Fatal("expected active log file to rotate")
+	}
+	logFile.writePlainLine(time.Now(), defaultLogTimestampFormat, "after")
+
+	rotatedContents, err := os.ReadFile(rotatedPath)
+	if err != nil {
+		t.Fatalf("read rotated log: %v", err)
+	}
+	if !strings.Contains(string(rotatedContents), "before") {
+		t.Fatalf("expected rotated log to contain old line, got %q", string(rotatedContents))
+	}
+	if strings.Contains(string(rotatedContents), "after") {
+		t.Fatalf("expected rotated log not to contain new line, got %q", string(rotatedContents))
+	}
+
+	activeContents, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read active log: %v", err)
+	}
+	if !strings.Contains(string(activeContents), "after") {
+		t.Fatalf("expected active log to contain new line, got %q", string(activeContents))
+	}
+	if strings.Contains(string(activeContents), "before") {
+		t.Fatalf("expected active log not to contain old line, got %q", string(activeContents))
 	}
 }
 

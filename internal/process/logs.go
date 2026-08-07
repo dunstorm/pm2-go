@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
@@ -20,8 +21,14 @@ const (
 	maxStreamLogBufferBytes = 1024 * 1024
 )
 
+type managedLogFile struct {
+	path string
+	mu   sync.Mutex
+	file *os.File
+}
+
 type combinedLogSink struct {
-	file    *os.File
+	file    *managedLogFile
 	entries chan logstore.Entry
 	done    chan struct{}
 }
@@ -29,12 +36,113 @@ type combinedLogSink struct {
 type processLogStream struct {
 	name   string
 	reader *os.File
-	file   *os.File
+	file   *managedLogFile
 	buffer []byte
 	closed bool
 }
 
-func newCombinedLogSink(file *os.File) *combinedLogSink {
+var activeLogFiles sync.Map
+
+func registerManagedLogFile(path string, file *os.File) *managedLogFile {
+	logFile := &managedLogFile{path: path, file: file}
+	activeLogFiles.Store(path, logFile)
+	return logFile
+}
+
+func RotateLogFile(filename, rotatedFilename string) (bool, error) {
+	if value, ok := activeLogFiles.Load(filename); ok {
+		return value.(*managedLogFile).rotate(rotatedFilename)
+	}
+	return rotateInactiveLogFile(filename, rotatedFilename)
+}
+
+func rotateInactiveLogFile(filename, rotatedFilename string) (bool, error) {
+	if filename == "" || rotatedFilename == "" {
+		return false, nil
+	}
+	if _, err := os.Stat(filename); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := os.Rename(filename, rotatedFilename); err != nil {
+		return false, err
+	}
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	if err != nil {
+		return true, err
+	}
+	if err := file.Close(); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (logFile *managedLogFile) rotate(rotatedFilename string) (bool, error) {
+	if logFile == nil {
+		return false, nil
+	}
+
+	logFile.mu.Lock()
+	defer logFile.mu.Unlock()
+
+	if logFile.file != nil {
+		_ = logFile.file.Close()
+		logFile.file = nil
+	}
+
+	rotated, rotateErr := rotateInactiveLogFile(logFile.path, rotatedFilename)
+	file, openErr := os.OpenFile(logFile.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	if openErr != nil {
+		return rotated, openErr
+	}
+	logFile.file = file
+	return rotated, rotateErr
+}
+
+func (logFile *managedLogFile) close() {
+	if logFile == nil {
+		return
+	}
+
+	logFile.mu.Lock()
+	if logFile.file != nil {
+		_ = logFile.file.Close()
+		logFile.file = nil
+	}
+	logFile.mu.Unlock()
+
+	if current, ok := activeLogFiles.Load(logFile.path); ok && current == logFile {
+		activeLogFiles.Delete(logFile.path)
+	}
+}
+
+func (logFile *managedLogFile) writePlainLine(timestamp time.Time, timestampFormat, line string) {
+	if logFile == nil {
+		return
+	}
+	logFile.mu.Lock()
+	defer logFile.mu.Unlock()
+	if logFile.file == nil {
+		return
+	}
+	fmt.Fprintf(logFile.file, "%s: %s\n", timestamp.Format(timestampFormat), line)
+}
+
+func (logFile *managedLogFile) writeEntry(entry logstore.Entry) {
+	if logFile == nil {
+		return
+	}
+	logFile.mu.Lock()
+	defer logFile.mu.Unlock()
+	if logFile.file == nil {
+		return
+	}
+	_ = json.NewEncoder(logFile.file).Encode(entry)
+}
+
+func newCombinedLogSink(file *managedLogFile) *combinedLogSink {
 	sink := &combinedLogSink{
 		file:    file,
 		entries: make(chan logstore.Entry, 256),
@@ -43,9 +151,8 @@ func newCombinedLogSink(file *os.File) *combinedLogSink {
 
 	go func() {
 		defer close(sink.done)
-		encoder := json.NewEncoder(sink.file)
 		for entry := range sink.entries {
-			_ = encoder.Encode(entry)
+			sink.file.writeEntry(entry)
 		}
 	}()
 
@@ -67,7 +174,7 @@ func (sink *combinedLogSink) close() {
 	<-sink.done
 }
 
-func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFile *os.File, sink *combinedLogSink) {
+func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFile *managedLogFile, sink *combinedLogSink) {
 	streams := []*processLogStream{
 		{name: logstore.StdoutStream, reader: stdoutReader, file: stdoutFile},
 		{name: logstore.StderrStream, reader: stderrReader, file: stderrFile},
@@ -216,7 +323,7 @@ func (stream *processLogStream) close(sink *combinedLogSink) {
 
 func (stream *processLogStream) writeLine(line string, sink *combinedLogSink) {
 	now := time.Now()
-	fmt.Fprintf(stream.file, "%s: %s\n", now.Format(defaultLogTimestampFormat), line)
+	stream.file.writePlainLine(now, defaultLogTimestampFormat, line)
 	sink.write(logstore.Entry{
 		Timestamp: now.UTC().Format(time.RFC3339Nano),
 		Stream:    stream.name,

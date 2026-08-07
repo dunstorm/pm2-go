@@ -42,9 +42,9 @@ type SpawnParams struct {
 	ErrFilePath         string `json:"-"`
 	CombinedLogFilePath string `json:"-"`
 
-	logFile      *os.File
-	errFile      *os.File
-	combinedFile *os.File
+	logFile      *managedLogFile
+	errFile      *managedLogFile
+	combinedFile *managedLogFile
 	nullFile     *os.File
 }
 
@@ -132,17 +132,26 @@ func commandEnvironment(base []string, overrides map[string]string, pythonExecut
 
 func (params *SpawnParams) createFiles() error {
 	var err error
-	if params.logFile, err = os.OpenFile(params.LogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+	logFile, err := os.OpenFile(params.LogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	if err != nil {
 		return err
 	}
-	if params.errFile, err = os.OpenFile(params.ErrFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+	params.logFile = registerManagedLogFile(params.LogFilePath, logFile)
+
+	errFile, err := os.OpenFile(params.ErrFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	if err != nil {
 		params.closeFiles()
 		return err
 	}
-	if params.combinedFile, err = os.OpenFile(params.CombinedLogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+	params.errFile = registerManagedLogFile(params.ErrFilePath, errFile)
+
+	combinedFile, err := os.OpenFile(params.CombinedLogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	if err != nil {
 		params.closeFiles()
 		return err
 	}
+	params.combinedFile = registerManagedLogFile(params.CombinedLogFilePath, combinedFile)
+
 	if params.nullFile, err = os.Open(os.DevNull); err != nil {
 		params.closeFiles()
 		return err
@@ -151,10 +160,11 @@ func (params *SpawnParams) createFiles() error {
 }
 
 func (params *SpawnParams) closeFiles() {
-	for _, file := range []*os.File{params.nullFile, params.logFile, params.errFile, params.combinedFile} {
-		if file != nil {
-			_ = file.Close()
-		}
+	for _, file := range []*managedLogFile{params.logFile, params.errFile, params.combinedFile} {
+		file.close()
+	}
+	if params.nullFile != nil {
+		_ = params.nullFile.Close()
 	}
 }
 

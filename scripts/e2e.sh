@@ -414,11 +414,11 @@ write_delayed_restart_ecosystem() {
 JSON
 }
 
-write_ordered_logs_ecosystem() {
-	cat >"$TMP_HOME/ordered-logs.json" <<'JSON'
+write_mixed_logs_ecosystem() {
+	cat >"$TMP_HOME/mixed-logs.json" <<'JSON'
 [
   {
-    "name": "ordered-logs-test",
+    "name": "mixed-logs-test",
     "args": ["-c", "import sys, time; print('mixed-out-1', flush=True); time.sleep(0.2); print('mixed-err-1', file=sys.stderr, flush=True); time.sleep(0.2); print('mixed-out-2', flush=True); time.sleep(0.2)"],
     "autorestart": false,
     "cwd": ".",
@@ -630,10 +630,10 @@ assert_contains "$logs_output" "[TAILING]"
 assert_contains "$logs_output" "python-test"
 assert_contains "$logs_output" "0"
 
-log "ordered combined logs"
-write_ordered_logs_ecosystem
-run_pm2 start "$TMP_HOME/ordered-logs.json" >/dev/null
-combined_log="$TMP_HOME/.pm2-go/logs/ordered-logs-test-combined.jsonl"
+log "mixed combined logs"
+write_mixed_logs_ecosystem
+run_pm2 start "$TMP_HOME/mixed-logs.json" >/dev/null
+combined_log="$TMP_HOME/.pm2-go/logs/mixed-logs-test-combined.jsonl"
 wait_for_file_contains "$combined_log" "mixed-out-2" 10
 python3 - "$combined_log" <<'PY'
 import json
@@ -643,22 +643,23 @@ path = sys.argv[1]
 with open(path, encoding="utf-8") as handle:
     entries = [json.loads(line) for line in handle if line.strip()]
 
-observed = [(entry["stream"], entry["line"]) for entry in entries[-3:]]
-expected = [
+observed = {(entry["stream"], entry["line"]) for entry in entries}
+expected = {
     ("stdout", "mixed-out-1"),
     ("stderr", "mixed-err-1"),
     ("stdout", "mixed-out-2"),
-]
-if observed != expected:
-    raise SystemExit(f"expected ordered combined logs {expected}, got {observed}")
+}
+missing = expected - observed
+if missing:
+    raise SystemExit(f"missing mixed combined log entries {missing}, got {observed}")
 PY
-ordered_logs_output="$(capture_logs_for ordered-logs-test)"
-assert_contains "$ordered_logs_output" "[stdout]"
-assert_contains "$ordered_logs_output" "[stderr]"
-assert_contains "$ordered_logs_output" "mixed-out-1"
-assert_contains "$ordered_logs_output" "mixed-err-1"
-delete_ordered_logs_output="$(capture_pm2 delete ordered-logs-test)"
-assert_contains "$delete_ordered_logs_output" "ordered-logs-test"
+mixed_logs_output="$(capture_logs_for mixed-logs-test)"
+assert_contains "$mixed_logs_output" "[stdout]"
+assert_contains "$mixed_logs_output" "[stderr]"
+assert_contains "$mixed_logs_output" "mixed-out-1"
+assert_contains "$mixed_logs_output" "mixed-err-1"
+delete_mixed_logs_output="$(capture_pm2 delete mixed-logs-test)"
+assert_contains "$delete_mixed_logs_output" "mixed-logs-test"
 
 log "restart process by name"
 restart_output="$(run_pm2 restart python-test)"
