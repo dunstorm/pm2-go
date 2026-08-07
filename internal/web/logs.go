@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
+	pb "github.com/dunstorm/pm2-go/proto"
 )
 
 const maxIncrementalLogReadBytes = 1024 * 1024
@@ -36,17 +37,20 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 	}
 	size := info.Size()
 	currentFileID := logFileID(info, generation)
+	offsetReset := false
 	if fileID != "" && fileID != currentFileID {
 		offset = 0
+		offsetReset = true
 	}
 	if offset < 0 || offset > size {
 		offset = 0
+		offsetReset = true
 	}
 	if tailLines <= 0 {
 		tailLines = 200
 	}
 
-	initialRead := offset == 0
+	initialRead := offset == 0 && (fileID == "" || offsetReset)
 	if initialRead {
 		lines, cursor, err := logstore.ReadLinesWithCursor(filePath, tailLines)
 		if err != nil {
@@ -160,6 +164,27 @@ func readCombinedLog(filePath string, offset int64, fileID string, tailLines int
 	return logs, nil
 }
 
+func readProcessCombinedLog(process *pb.Process, offset int64, fileID string, tailLines int) (logResponse, error) {
+	combinedLogPath := logstore.CombinedPath(process.LogFilePath)
+	if offset != 0 || fileID != "" {
+		return readCombinedLog(combinedLogPath, offset, fileID, tailLines)
+	}
+	if tailLines <= 0 {
+		tailLines = 200
+	}
+
+	entries, cursor, err := logstore.ReadMergedEntries(combinedLogPath, process.LogFilePath, process.ErrFilePath, tailLines)
+	if err != nil {
+		return logResponse{}, err
+	}
+	return logResponse{
+		FileID: logFileIDFromParts(cursor.FileID, cursor.Generation),
+		Offset: cursor.Offset,
+		Size:   cursor.Offset,
+		Lines:  formatLogEntries(entries),
+	}, nil
+}
+
 func readInitialCombinedLog(filePath string, tailLines int) (logResponse, error) {
 	if tailLines <= 0 {
 		tailLines = 200
@@ -197,6 +222,14 @@ func validCombinedLogLines(lines []string) []string {
 		validLines = append(validLines, logstore.FormatEntry(entry))
 	}
 	return validLines
+}
+
+func formatLogEntries(entries []logstore.Entry) []string {
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		lines = append(lines, logstore.FormatEntry(entry))
+	}
+	return lines
 }
 
 func logFileID(info os.FileInfo, generation string) string {

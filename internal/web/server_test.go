@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -572,6 +573,115 @@ func TestProcessCombinedLogs(t *testing.T) {
 	}
 	if !(stdoutFirst < stderrSecond && stderrSecond < stdoutThird) {
 		t.Fatalf("expected file order to be preserved, got %s", body)
+	}
+}
+
+func TestProcessCombinedLogsBackfillsLegacyHistory(t *testing.T) {
+	dir := t.TempDir()
+	outLogFile := dir + "/api-out.log"
+	errLogFile := dir + "/api-err.log"
+	combinedLogFile := logstore.CombinedPath(outLogFile)
+	if err := os.WriteFile(outLogFile, []byte("2026-08-07 10:00:00: legacy-out\n"), 0600); err != nil {
+		t.Fatalf("write stdout log: %v", err)
+	}
+	if err := os.WriteFile(errLogFile, []byte("2026-08-07 10:00:01: legacy-err\n"), 0600); err != nil {
+		t.Fatalf("write stderr log: %v", err)
+	}
+	contents := strings.Join([]string{
+		`{"timestamp":"2026-08-07T10:00:02Z","stream":"stdout","line":"combined-new"}`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(combinedLogFile, []byte(contents), 0600); err != nil {
+		t.Fatalf("write combined log: %v", err)
+	}
+
+	process := testProcess()
+	process.LogFilePath = outLogFile
+	process.ErrFilePath = errLogFile
+	server := newTestServer(t, fakeProcessSource{processes: []*pb.Process{process}})
+	cookies := loginCookies(t, server)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/processes/1/logs?stream=both&tail=3", nil)
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	body := recorder.Body.String()
+	legacyOut := strings.Index(body, "legacy-out")
+	legacyErr := strings.Index(body, "legacy-err")
+	combined := strings.Index(body, "combined-new")
+	if legacyOut < 0 || legacyErr < 0 || combined < 0 {
+		t.Fatalf("expected legacy and combined log history, got %s", body)
+	}
+	if !(legacyOut < legacyErr && legacyErr < combined) {
+		t.Fatalf("expected merged log history ordered by timestamp, got %s", body)
+	}
+}
+
+func TestProcessCombinedLogsDoesNotRepeatLegacyBackfillForEmptyCombinedCursor(t *testing.T) {
+	dir := t.TempDir()
+	outLogFile := dir + "/api-out.log"
+	errLogFile := dir + "/api-err.log"
+	combinedLogFile := logstore.CombinedPath(outLogFile)
+	if err := os.WriteFile(outLogFile, []byte("2026-08-07 10:00:00: legacy-out\n"), 0600); err != nil {
+		t.Fatalf("write stdout log: %v", err)
+	}
+	if err := os.WriteFile(errLogFile, []byte("2026-08-07 10:00:01: legacy-err\n"), 0600); err != nil {
+		t.Fatalf("write stderr log: %v", err)
+	}
+	if err := os.WriteFile(combinedLogFile, nil, 0600); err != nil {
+		t.Fatalf("write empty combined log: %v", err)
+	}
+
+	process := testProcess()
+	process.LogFilePath = outLogFile
+	process.ErrFilePath = errLogFile
+	server := newTestServer(t, fakeProcessSource{processes: []*pb.Process{process}})
+	cookies := loginCookies(t, server)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/processes/1/logs?stream=both&tail=2", nil)
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var first logResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &first); err != nil {
+		t.Fatalf("decode first response: %v", err)
+	}
+	if first.Offset != 0 || first.FileID == "" {
+		t.Fatalf("expected empty combined cursor with file id, got offset=%d fileID=%q", first.Offset, first.FileID)
+	}
+	if len(first.Lines) != 2 {
+		t.Fatalf("expected legacy backfill lines, got %#v", first.Lines)
+	}
+
+	recorder = httptest.NewRecorder()
+	query := url.Values{
+		"stream": {"both"},
+		"tail":   {"2"},
+		"offset": {strconv.FormatInt(first.Offset, 10)},
+		"fileId": {first.FileID},
+	}
+	request = httptest.NewRequest(http.MethodGet, "/api/processes/1/logs?"+query.Encode(), nil)
+	addCookies(request, cookies)
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var second logResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &second); err != nil {
+		t.Fatalf("decode second response: %v", err)
+	}
+	if len(second.Lines) != 0 {
+		t.Fatalf("expected no repeated legacy backfill lines, got %#v", second.Lines)
 	}
 }
 

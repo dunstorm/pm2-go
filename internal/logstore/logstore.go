@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -192,6 +193,141 @@ func parseEntries(lines []string) []Entry {
 
 func ReadLinesWithCursor(filename string, tail int) ([]string, TailCursor, error) {
 	return readTailLinesWithGenerationReader(filename, tail, ReadCursorGeneration)
+}
+
+type sortableEntry struct {
+	entry      Entry
+	occurredAt time.Time
+	order      int
+}
+
+func ReadMergedEntries(combinedLogPath, stdoutLogPath, stderrLogPath string, tail int) ([]Entry, TailCursor, error) {
+	combinedEntries, tailCursor, err := ReadEntriesWithCursor(combinedLogPath, tail)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	if tail <= 0 || len(combinedEntries) >= tail {
+		return combinedEntries, tailCursor, nil
+	}
+
+	legacyEntries, err := legacyLogEntries(stdoutLogPath, stderrLogPath, tail)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	if len(legacyEntries) == 0 {
+		return combinedEntries, tailCursor, nil
+	}
+
+	combinedKeys := make(map[string]int, len(combinedEntries))
+	for _, entry := range combinedEntries {
+		combinedKeys[entryKey(entry)]++
+	}
+
+	records := make([]sortableEntry, 0, len(legacyEntries)+len(combinedEntries))
+	order := 0
+	for _, entry := range legacyEntries {
+		key := entryKey(entry)
+		if combinedKeys[key] > 0 {
+			combinedKeys[key]--
+			continue
+		}
+		records = append(records, sortableEntry{
+			entry:      entry,
+			occurredAt: entryTime(entry),
+			order:      order,
+		})
+		order++
+	}
+	for _, entry := range combinedEntries {
+		records = append(records, sortableEntry{
+			entry:      entry,
+			occurredAt: entryTime(entry),
+			order:      order,
+		})
+		order++
+	}
+
+	sort.SliceStable(records, func(i, j int) bool {
+		left := records[i]
+		right := records[j]
+		if !left.occurredAt.IsZero() && !right.occurredAt.IsZero() && !left.occurredAt.Equal(right.occurredAt) {
+			return left.occurredAt.Before(right.occurredAt)
+		}
+		return left.order < right.order
+	})
+	if len(records) > tail {
+		records = records[len(records)-tail:]
+	}
+
+	entries := make([]Entry, 0, len(records))
+	for _, record := range records {
+		entries = append(entries, record.entry)
+	}
+	return entries, tailCursor, nil
+}
+
+func legacyLogEntries(stdoutLogPath, stderrLogPath string, tail int) ([]Entry, error) {
+	stdoutEntries, err := plainLogEntries(stdoutLogPath, StdoutStream, tail)
+	if err != nil {
+		return nil, err
+	}
+	stderrEntries, err := plainLogEntries(stderrLogPath, StderrStream, tail)
+	if err != nil {
+		return nil, err
+	}
+	return append(stdoutEntries, stderrEntries...), nil
+}
+
+func plainLogEntries(filename, stream string, tail int) ([]Entry, error) {
+	if filename == "" {
+		return nil, nil
+	}
+	lines, _, err := ReadLinesWithCursor(filename, tail)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	entries := make([]Entry, 0, len(lines))
+	for _, line := range lines {
+		timestamp, message, ok := strings.Cut(line, ": ")
+		if !ok || len(timestamp) != len("2006-01-02 15:04:05") {
+			entries = append(entries, Entry{
+				Stream: stream,
+				Line:   line,
+			})
+			continue
+		}
+		entries = append(entries, Entry{
+			Timestamp: timestamp,
+			Stream:    stream,
+			Line:      message,
+		})
+	}
+	return entries, nil
+}
+
+func entryKey(entry Entry) string {
+	return entry.Stream + "\x00" + entrySecond(entry) + "\x00" + entry.Line
+}
+
+func entrySecond(entry Entry) string {
+	if parsed, err := time.Parse(time.RFC3339Nano, entry.Timestamp); err == nil {
+		return parsed.Local().Format("2006-01-02 15:04:05")
+	}
+	return entry.Timestamp
+}
+
+func entryTime(entry Entry) time.Time {
+	if parsed, err := time.Parse(time.RFC3339Nano, entry.Timestamp); err == nil {
+		return parsed.Local()
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", entry.Timestamp, time.Local); err == nil {
+		return parsed
+	}
+	return time.Time{}
 }
 
 func TailEntries(filename string, handle func(Entry)) error {

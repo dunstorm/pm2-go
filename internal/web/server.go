@@ -331,7 +331,7 @@ func (server *Server) handleProcessLogs(w http.ResponseWriter, r *http.Request, 
 
 	stream := r.URL.Query().Get("stream")
 	var filePath string
-	read := readLog
+	combined := false
 	switch stream {
 	case "", "out", "stdout":
 		filePath = process.LogFilePath
@@ -339,7 +339,7 @@ func (server *Server) handleProcessLogs(w http.ResponseWriter, r *http.Request, 
 		filePath = process.ErrFilePath
 	case "both", "combined":
 		filePath = logstore.CombinedPath(process.LogFilePath)
-		read = readCombinedLog
+		combined = true
 	default:
 		writeJSONError(w, http.StatusBadRequest, "invalid log stream")
 		return
@@ -355,7 +355,12 @@ func (server *Server) handleProcessLogs(w http.ResponseWriter, r *http.Request, 
 	if tail > 1000 {
 		tail = 1000
 	}
-	logs, err := read(filePath, offset, fileID, tail)
+	var logs logResponse
+	if combined {
+		logs, err = readProcessCombinedLog(process, offset, fileID, tail)
+	} else {
+		logs, err = readLog(filePath, offset, fileID, tail)
+	}
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, "failed to read log file")
 		return
