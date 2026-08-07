@@ -20,6 +20,7 @@ func updateProcessMap(handler *Handler, processId int32, p *os.Process) {
 const metricsRefreshInterval = 2 * time.Second
 
 var rotateLogFile = processrunner.RotateLogFile
+var waitForLiveRestartProcessExit = waitForTrackedProcessExit
 
 type logRotationKey struct {
 	logFilePath     string
@@ -258,6 +259,7 @@ func restartLiveProcess(handler *Handler, p *pb.Process) {
 		return
 	}
 
+	pid := p.Pid
 	found := handler.processes[p.Id]
 	if found == nil && p.Pid != 0 {
 		if process, running := utils.GetProcess(p.Pid); running {
@@ -265,11 +267,16 @@ func restartLiveProcess(handler *Handler, p *pb.Process) {
 		}
 	}
 	if found != nil {
+		handler.mu.Unlock()
 		if err := utils.KillProcessGroup(found); err != nil {
 			handler.logger.Warn().Err(err).Msgf("Failed to stop process %s before restart", p.Name)
 		}
-		if p.Pid > 0 {
-			waitForTrackedProcessExit(p.Pid, 2*time.Second)
+		if pid > 0 {
+			waitForLiveRestartProcessExit(pid, 2*time.Second)
+		}
+		handler.mu.Lock()
+		if handler.databaseById[p.Id] != p || p.GetStopSignal() {
+			return
 		}
 	}
 

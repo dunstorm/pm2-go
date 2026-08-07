@@ -606,6 +606,57 @@ func TestReadLogResetsOffsetWhenCursorGenerationChanges(t *testing.T) {
 	}
 }
 
+func TestReadLogResetsWhenCursorGenerationChangesAfterSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	logFile := dir + "/flushed-after-open.log"
+	if err := os.WriteFile(logFile, []byte("first\n"), 0600); err != nil {
+		t.Fatalf("write original log: %v", err)
+	}
+
+	first, err := readLog(logFile, 0, "", 10)
+	if err != nil {
+		t.Fatalf("read original log: %v", err)
+	}
+
+	previousAfterStableLogSnapshot := afterStableLogSnapshot
+	flushed := false
+	afterStableLogSnapshot = func(path string) {
+		if flushed || path != logFile {
+			return
+		}
+		flushed = true
+		if err := os.Truncate(path, 0); err != nil {
+			t.Fatalf("truncate log: %v", err)
+		}
+		if err := logstore.BumpCursorGeneration(path); err != nil {
+			t.Fatalf("bump cursor generation: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("second\n"), 0600); err != nil {
+			t.Fatalf("write regenerated log: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		afterStableLogSnapshot = previousAfterStableLogSnapshot
+	})
+
+	logs, err := readLog(logFile, first.Offset, first.FileID, 10)
+	if err != nil {
+		t.Fatalf("read regenerated log: %v", err)
+	}
+	if !flushed {
+		t.Fatal("expected flush hook to run")
+	}
+	if logs.FileID == first.FileID {
+		t.Fatal("expected cursor generation change to alter file id")
+	}
+	if logs.Offset != int64(len("second\n")) {
+		t.Fatalf("expected regenerated offset, got %d", logs.Offset)
+	}
+	if strings.Join(logs.Lines, ",") != "second" {
+		t.Fatalf("expected regenerated line, got %#v", logs.Lines)
+	}
+}
+
 func TestProcessCombinedLogs(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/api-out.log"

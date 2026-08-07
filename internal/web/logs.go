@@ -55,16 +55,7 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 
 	initialRead := offset == 0 && (fileID == "" || offsetReset)
 	if initialRead {
-		lines, cursor, err := logstore.ReadLinesWithCursor(filePath, tailLines)
-		if err != nil {
-			return logResponse{}, err
-		}
-		return logResponse{
-			FileID: logFileIDFromParts(cursor.FileID, cursor.Generation),
-			Offset: cursor.Offset,
-			Size:   cursor.Offset,
-			Lines:  lines,
-		}, nil
+		return readInitialLog(filePath, tailLines)
 	}
 
 	readStart := offset
@@ -76,6 +67,9 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 	lines, consumedOffset, err := readIncrementalLogLines(reader, readStart, size)
 	if err != nil {
 		return logResponse{}, err
+	}
+	if logCursorGenerationChangedSinceSnapshot(filePath, generation) {
+		return readInitialLog(filePath, tailLines)
 	}
 	if logPathRotatedSinceSnapshot(filePath, currentPhysicalFileID) {
 		var drainedLines []string
@@ -89,6 +83,19 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 		FileID: currentFileID,
 		Offset: consumedOffset,
 		Size:   consumedOffset,
+		Lines:  lines,
+	}, nil
+}
+
+func readInitialLog(filePath string, tailLines int) (logResponse, error) {
+	lines, cursor, err := logstore.ReadLinesWithCursor(filePath, tailLines)
+	if err != nil {
+		return logResponse{}, err
+	}
+	return logResponse{
+		FileID: logFileIDFromParts(cursor.FileID, cursor.Generation),
+		Offset: cursor.Offset,
+		Size:   cursor.Offset,
 		Lines:  lines,
 	}, nil
 }
@@ -286,6 +293,10 @@ func logPathRotatedSinceSnapshot(filePath, physicalFileID string) bool {
 		return true
 	}
 	return logPhysicalFileID(info) != physicalFileID
+}
+
+func logCursorGenerationChangedSinceSnapshot(filePath, generation string) bool {
+	return readLogCursorGeneration(filePath) != generation
 }
 
 func logFileIDFromParts(fileID, generation string) string {

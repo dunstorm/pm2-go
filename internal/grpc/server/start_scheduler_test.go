@@ -1,11 +1,15 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
@@ -313,6 +317,94 @@ func TestHandleMaxLogGroupPrunesCreatedArchiveWhenMaxFilesInvalid(t *testing.T) 
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("expected invalid max-files pruning to remove %s, stat error: %v", path, err)
 		}
+	}
+}
+
+func TestRestartLiveProcessReleasesLockBeforeWaitingForExit(t *testing.T) {
+	command := exec.Command("sleep", "10")
+	if err := command.Start(); err != nil {
+		t.Fatalf("start test process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = command.Process.Kill()
+		_, _ = command.Process.Wait()
+	})
+
+	logger := zerolog.New(io.Discard)
+	process := &pb.Process{
+		Id:             1,
+		Name:           "live-restart",
+		Pid:            int32(command.Process.Pid),
+		ExecutablePath: "definitely-not-a-real-command",
+		ProcStatus: &pb.ProcStatus{
+			Status: "online",
+			Cpu:    "2.0%",
+			Memory: "8.0MB",
+		},
+	}
+	handler := &Handler{
+		logger:           &logger,
+		databaseById:     map[int32]*pb.Process{process.Id: process},
+		databaseByName:   map[string]*pb.Process{process.Name: process},
+		processes:        map[int32]*os.Process{process.Id: command.Process},
+		metricsUpdatedAt: make(map[int32]time.Time),
+	}
+
+	previousWaitForLiveRestartProcessExit := waitForLiveRestartProcessExit
+	waitStarted := make(chan struct{})
+	releaseWait := make(chan struct{})
+	var waitStartedOnce sync.Once
+	var releaseWaitOnce sync.Once
+	waitForLiveRestartProcessExit = func(pid int32, timeout time.Duration) bool {
+		waitStartedOnce.Do(func() {
+			close(waitStarted)
+		})
+		<-releaseWait
+		return true
+	}
+	t.Cleanup(func() {
+		releaseWaitOnce.Do(func() {
+			close(releaseWait)
+		})
+		waitForLiveRestartProcessExit = previousWaitForLiveRestartProcessExit
+	})
+
+	restartDone := make(chan struct{})
+	go func() {
+		handler.mu.Lock()
+		restartLiveProcess(handler, process)
+		handler.mu.Unlock()
+		close(restartDone)
+	}()
+
+	select {
+	case <-waitStarted:
+	case <-time.After(time.Second):
+		t.Fatal("expected live restart to enter exit wait")
+	}
+
+	listDone := make(chan error, 1)
+	go func() {
+		_, err := handler.ListProcess(context.Background(), &pb.ListProcessRequest{})
+		listDone <- err
+	}()
+
+	select {
+	case err := <-listDone:
+		if err != nil {
+			t.Fatalf("list process while live restart waits: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("expected list process not to block while live restart waits")
+	}
+
+	releaseWaitOnce.Do(func() {
+		close(releaseWait)
+	})
+	select {
+	case <-restartDone:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for live restart to return")
 	}
 }
 
