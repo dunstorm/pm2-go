@@ -103,6 +103,51 @@ func TestHandleMaxLogGroupAdvancesCountWhenRotationRecreateFails(t *testing.T) {
 	}
 }
 
+func TestHandleMaxLogGroupKeepsCountMonotonicAfterPrune(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	errPath := filepath.Join(dir, "api-err.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	if err := os.WriteFile(outPath, []byte("large enough"), 0640); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	process := &pb.Process{
+		Id:           1,
+		LogFilePath:  outPath,
+		ErrFilePath:  errPath,
+		LogFileCount: 3,
+	}
+	logger := zerolog.New(io.Discard)
+	handler := &Handler{
+		logger:       &logger,
+		databaseById: map[int32]*pb.Process{process.Id: process},
+	}
+
+	previousRotateLogFile := rotateLogFile
+	rotateLogFile = func(string, string) (bool, error) {
+		return true, nil
+	}
+	t.Cleanup(func() {
+		rotateLogFile = previousRotateLogFile
+	})
+
+	handleMaxLogGroup(handler, &logRotationGroup{
+		logFilePath:     outPath,
+		errFilePath:     errPath,
+		combinedLogPath: combinedPath,
+		processes:       []*pb.Process{process},
+	}, utils.Config{
+		LogRotate:         true,
+		LogRotateSize:     1,
+		LogRotateMaxFiles: 3,
+	})
+
+	if process.LogFileCount != 4 {
+		t.Fatalf("expected monotonic log file count 4 after prune, got %d", process.LogFileCount)
+	}
+}
+
 func findLogRotationGroup(t *testing.T, groups []*logRotationGroup, logFilePath, errFilePath string) *logRotationGroup {
 	t.Helper()
 

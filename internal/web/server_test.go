@@ -575,6 +575,28 @@ func TestProcessCombinedLogs(t *testing.T) {
 	}
 }
 
+func TestReadCombinedLogBackfillsMalformedInitialTail(t *testing.T) {
+	dir := t.TempDir()
+	logFile := dir + "/api-out.log"
+	combinedLogFile := logstore.CombinedPath(logFile)
+	contents := strings.Join([]string{
+		`{"timestamp":"2026-08-07T10:00:00Z","stream":"stdout","line":"ready"}`,
+		`{"timestamp":"2026-08-07T10:00:01Z","stream":"stderr","line":"warning"`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(combinedLogFile, []byte(contents), 0600); err != nil {
+		t.Fatalf("write combined log: %v", err)
+	}
+
+	logs, err := readCombinedLog(combinedLogFile, 0, "", 1)
+	if err != nil {
+		t.Fatalf("read combined log: %v", err)
+	}
+	if len(logs.Lines) != 1 || !strings.Contains(logs.Lines[0], "ready") {
+		t.Fatalf("expected older valid entry to backfill malformed tail, got %#v", logs.Lines)
+	}
+}
+
 func TestNonLoopbackHostRequiresAllowRemote(t *testing.T) {
 	_, err := NewServer(Config{
 		Host:  "0.0.0.0",

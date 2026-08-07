@@ -147,21 +147,56 @@ func readIncrementalLogLines(reader io.Reader, readStart, fileSize int64) ([]str
 }
 
 func readCombinedLog(filePath string, offset int64, fileID string, tailLines int) (logResponse, error) {
+	if offset == 0 {
+		return readInitialCombinedLog(filePath, tailLines)
+	}
+
 	logs, err := readLog(filePath, offset, fileID, tailLines)
 	if err != nil {
 		return logResponse{}, err
 	}
 
-	lines := make([]string, 0, len(logs.Lines))
-	for _, line := range logs.Lines {
+	logs.Lines = validCombinedLogLines(logs.Lines)
+	return logs, nil
+}
+
+func readInitialCombinedLog(filePath string, tailLines int) (logResponse, error) {
+	if tailLines <= 0 {
+		tailLines = 200
+	}
+
+	physicalTail := tailLines
+	for {
+		lines, cursor, err := logstore.ReadLinesWithCursor(filePath, physicalTail)
+		if err != nil {
+			return logResponse{}, err
+		}
+		validLines := validCombinedLogLines(lines)
+		if len(validLines) > tailLines {
+			validLines = validLines[len(validLines)-tailLines:]
+		}
+		if len(validLines) >= tailLines || len(lines) < physicalTail {
+			return logResponse{
+				FileID: logFileIDFromParts(cursor.FileID, cursor.Generation),
+				Offset: cursor.Offset,
+				Size:   cursor.Offset,
+				Lines:  validLines,
+			}, nil
+		}
+		physicalTail *= 2
+	}
+}
+
+func validCombinedLogLines(lines []string) []string {
+	validLines := make([]string, 0, len(lines))
+	for _, line := range lines {
 		entry, err := logstore.ParseLine(line)
 		if err != nil {
 			continue
 		}
-		lines = append(lines, logstore.FormatEntry(entry))
+		validLines = append(validLines, logstore.FormatEntry(entry))
 	}
-	logs.Lines = lines
-	return logs, nil
+	return validLines
 }
 
 func logFileID(info os.FileInfo, generation string) string {

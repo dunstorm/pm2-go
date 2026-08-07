@@ -160,15 +160,6 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 			handler.logger.Error().Msgf("Error while deleting log file %s: %s", group.combinedLogPath+"."+strconv.Itoa(int(oldestLogFileIndex)), err)
 		}
 		handler.logger.Info().Msgf("Deleted combined log file %s", group.combinedLogPath+"."+strconv.Itoa(int(oldestLogFileIndex)))
-
-		// decrease logfilecount
-		handler.mu.Lock()
-		for _, process := range group.processes {
-			if handler.databaseById[process.Id] == process {
-				process.LogFileCount = int32(config.LogRotateMaxFiles)
-			}
-		}
-		handler.mu.Unlock()
 	}
 }
 
