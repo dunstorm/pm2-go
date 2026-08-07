@@ -2,7 +2,9 @@ package server
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -84,6 +86,7 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 	handler.mu.Lock()
 	logFileCount := maxLogFileCount(group.processes)
 	handler.mu.Unlock()
+	logFileCount = maxInt32(logFileCount, nextLogArchiveIndex([]string{group.logFilePath, group.errFilePath, group.combinedLogPath}))
 
 	rotatedAny := false
 
@@ -149,6 +152,61 @@ func normalizedLogRotateMaxFiles(config utils.Config) int32 {
 	return int32(config.LogRotateMaxFiles)
 }
 
+func nextLogArchiveIndex(paths []string) int32 {
+	seen := make(map[string]bool, len(paths))
+	var nextIndex int32
+	for _, path := range paths {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		highestIndex := highestLogArchiveIndex(path)
+		if highestIndex >= nextIndex {
+			nextIndex = highestIndex + 1
+		}
+	}
+	return nextIndex
+}
+
+func highestLogArchiveIndex(path string) int32 {
+	dir := filepath.Dir(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return -1
+	}
+
+	var highestIndex int32 = -1
+	for _, entry := range entries {
+		index, ok := logArchiveIndex(path, entry.Name())
+		if !ok {
+			continue
+		}
+		if index > highestIndex {
+			highestIndex = index
+		}
+	}
+	return highestIndex
+}
+
+func logArchiveIndex(path, name string) (int32, bool) {
+	suffix, ok := strings.CutPrefix(name, filepath.Base(path)+".")
+	if !ok || suffix == "" {
+		return 0, false
+	}
+	index, err := strconv.ParseInt(suffix, 10, 32)
+	if err != nil || index < 0 {
+		return 0, false
+	}
+	return int32(index), true
+}
+
+func maxInt32(left, right int32) int32 {
+	if left > right {
+		return left
+	}
+	return right
+}
+
 func processUsesLogRotationGroup(process *pb.Process, group *logRotationGroup) bool {
 	return process.LogFilePath == group.logFilePath &&
 		process.ErrFilePath == group.errFilePath &&
@@ -157,18 +215,43 @@ func processUsesLogRotationGroup(process *pb.Process, group *logRotationGroup) b
 
 func pruneLogArchives(handler *Handler, paths []string, index int32) {
 	seen := make(map[string]bool, len(paths))
+	seenArchives := make(map[string]bool, len(paths))
 	for _, path := range paths {
 		if path == "" || seen[path] {
 			continue
 		}
 		seen[path] = true
-		archivePath := path + "." + strconv.Itoa(int(index))
-		if err := os.Remove(archivePath); err != nil {
-			handler.logger.Error().Msgf("Error while deleting log file %s: %s", archivePath, err)
+
+		for _, archivePath := range logArchivePathsThroughIndex(path, index) {
+			if seenArchives[archivePath] {
+				continue
+			}
+			seenArchives[archivePath] = true
+			if err := os.Remove(archivePath); err != nil {
+				handler.logger.Error().Msgf("Error while deleting log file %s: %s", archivePath, err)
+				continue
+			}
+			handler.logger.Info().Msgf("Deleted log file %s", archivePath)
+		}
+	}
+}
+
+func logArchivePathsThroughIndex(path string, maxIndex int32) []string {
+	dir := filepath.Dir(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []string{path + "." + strconv.Itoa(int(maxIndex))}
+	}
+
+	archivePaths := make([]string, 0)
+	for _, entry := range entries {
+		index, ok := logArchiveIndex(path, entry.Name())
+		if !ok || index > maxIndex {
 			continue
 		}
-		handler.logger.Info().Msgf("Deleted log file %s", archivePath)
+		archivePaths = append(archivePaths, filepath.Join(dir, entry.Name()))
 	}
+	return archivePaths
 }
 
 func processMetricsDue(handler *Handler, processId int32) bool {

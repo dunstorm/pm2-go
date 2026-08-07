@@ -59,6 +59,62 @@ func TestMaxLogFileCountUsesHighestSharedCount(t *testing.T) {
 	}
 }
 
+func TestHandleMaxLogGroupInitializesCountFromExistingArchives(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	errPath := filepath.Join(dir, "api-err.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	if err := os.WriteFile(outPath, []byte("large enough"), 0640); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	for _, path := range []string{outPath + ".7", errPath + ".6", combinedPath + ".5"} {
+		if err := os.WriteFile(path, []byte("archive"), 0640); err != nil {
+			t.Fatalf("write archive %s: %v", path, err)
+		}
+	}
+
+	process := &pb.Process{
+		Id:          1,
+		LogFilePath: outPath,
+		ErrFilePath: errPath,
+	}
+	logger := zerolog.New(io.Discard)
+	handler := &Handler{
+		logger:       &logger,
+		databaseById: map[int32]*pb.Process{process.Id: process},
+	}
+
+	rotatedPaths := make(map[string]bool)
+	previousRotateLogFile := rotateLogFile
+	rotateLogFile = func(_, rotatedFilename string) (bool, error) {
+		rotatedPaths[rotatedFilename] = true
+		return true, nil
+	}
+	t.Cleanup(func() {
+		rotateLogFile = previousRotateLogFile
+	})
+
+	handleMaxLogGroup(handler, &logRotationGroup{
+		logFilePath:     outPath,
+		errFilePath:     errPath,
+		combinedLogPath: combinedPath,
+		processes:       []*pb.Process{process},
+	}, utils.Config{
+		LogRotate:         true,
+		LogRotateSize:     1,
+		LogRotateMaxFiles: 20,
+	})
+
+	for _, path := range []string{outPath + ".8", errPath + ".8", combinedPath + ".8"} {
+		if !rotatedPaths[path] {
+			t.Fatalf("expected rotation to use archive path %s, got %#v", path, rotatedPaths)
+		}
+	}
+	if process.LogFileCount != 9 {
+		t.Fatalf("expected log file count to continue at 9, got %d", process.LogFileCount)
+	}
+}
+
 func TestHandleMaxLogGroupAdvancesCountWhenRotationRecreateFails(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "api-out.log")
@@ -310,10 +366,10 @@ func TestHandleMaxLogGroupPrunesCreatedArchiveWhenMaxFilesInvalid(t *testing.T) 
 		LogRotateMaxFiles: 0,
 	})
 
-	if process.LogFileCount != 1 {
+	if process.LogFileCount != 2 {
 		t.Fatalf("expected log file count to advance, got %d", process.LogFileCount)
 	}
-	for _, path := range []string{outPath + ".0", errPath + ".0", combinedPath + ".0"} {
+	for _, path := range []string{outPath + ".0", errPath + ".0", combinedPath + ".0", outPath + ".1", errPath + ".1", combinedPath + ".1"} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("expected invalid max-files pruning to remove %s, stat error: %v", path, err)
 		}

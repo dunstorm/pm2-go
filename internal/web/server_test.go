@@ -570,6 +570,83 @@ func TestReadLogDrainsOpenedDescriptorAfterRotation(t *testing.T) {
 	}
 }
 
+func TestReadLogRevalidatesReplacementSnapshotAfterRotation(t *testing.T) {
+	dir := t.TempDir()
+	logFile := dir + "/replacement-drain-rotated.log"
+	if err := os.WriteFile(logFile, []byte("first\n"), 0600); err != nil {
+		t.Fatalf("write original log: %v", err)
+	}
+
+	first, err := readLog(logFile, 0, "", 10)
+	if err != nil {
+		t.Fatalf("read original log: %v", err)
+	}
+
+	previousAfterStableLogSnapshot := afterStableLogSnapshot
+	step := 0
+	afterStableLogSnapshot = func(path string) {
+		if path != logFile {
+			return
+		}
+		step++
+		switch step {
+		case 1:
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+			if err != nil {
+				t.Fatalf("open original for append: %v", err)
+			}
+			if _, err := file.WriteString("second\n"); err != nil {
+				_ = file.Close()
+				t.Fatalf("append original log: %v", err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatalf("close original append: %v", err)
+			}
+			if err := os.Rename(path, path+".1"); err != nil {
+				t.Fatalf("rotate original log: %v", err)
+			}
+			if err := os.WriteFile(path, []byte("third\n"), 0600); err != nil {
+				t.Fatalf("write replacement log: %v", err)
+			}
+		case 2:
+			file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+			if err != nil {
+				t.Fatalf("open replacement for append: %v", err)
+			}
+			if _, err := file.WriteString("fourth\n"); err != nil {
+				_ = file.Close()
+				t.Fatalf("append replacement log: %v", err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatalf("close replacement append: %v", err)
+			}
+			if err := os.Rename(path, path+".2"); err != nil {
+				t.Fatalf("rotate replacement log: %v", err)
+			}
+			if err := os.WriteFile(path, []byte("fifth\n"), 0600); err != nil {
+				t.Fatalf("write second replacement log: %v", err)
+			}
+		}
+	}
+	t.Cleanup(func() {
+		afterStableLogSnapshot = previousAfterStableLogSnapshot
+	})
+
+	logs, err := readLog(logFile, first.Offset, first.FileID, 1)
+	if err != nil {
+		t.Fatalf("read double-rotated log: %v", err)
+	}
+	if step < 2 {
+		t.Fatalf("expected both rotation hooks to run, got %d", step)
+	}
+	if logs.Offset != int64(len("fifth\n")) {
+		t.Fatalf("expected second replacement offset, got %d", logs.Offset)
+	}
+	if strings.Join(logs.Lines, ",") != "second,third,fourth,fifth" {
+		t.Fatalf("expected drained original and replacement lines, got %#v", logs.Lines)
+	}
+}
+
 func TestReadLogInitialReadDrainsOpenedDescriptorAfterRotation(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/initial-drain-rotated.log"

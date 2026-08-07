@@ -105,9 +105,28 @@ func readReplacementLogAfterRotation(filePath string) (logResponse, error) {
 		return logResponse{}, errors.New("log path is a directory")
 	}
 
+	physicalFileID := logPhysicalFileID(info)
+	afterStableLogSnapshot(filePath)
 	lines, consumedOffset, err := readIncrementalLogLines(file, 0, info.Size())
 	if err != nil {
 		return logResponse{}, err
+	}
+	if logCursorGenerationChangedSinceSnapshot(filePath, generation) {
+		return readReplacementLogAfterRotation(filePath)
+	}
+	if logPathRotatedSinceSnapshot(filePath, physicalFileID) {
+		drainedLines, _, err := drainRotatedLogDescriptor(file, consumedOffset)
+		if err != nil {
+			return logResponse{}, err
+		}
+		lines = append(lines, drainedLines...)
+
+		replacementLogs, err := readReplacementLogAfterRotation(filePath)
+		if err != nil {
+			return logResponse{}, err
+		}
+		replacementLogs.Lines = append(lines, replacementLogs.Lines...)
+		return replacementLogs, nil
 	}
 	return logResponse{
 		FileID: logFileID(info, generation),
