@@ -148,6 +148,69 @@ func TestHandleMaxLogGroupKeepsCountMonotonicAfterPrune(t *testing.T) {
 	}
 }
 
+func TestHandleMaxLogGroupPrunesSuccessfulArchivesAfterPartialFailure(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	errPath := filepath.Join(dir, "api-err.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	if err := os.WriteFile(outPath, []byte("large enough"), 0640); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	for _, path := range []string{outPath + ".1", errPath + ".1", combinedPath + ".1"} {
+		if err := os.WriteFile(path, []byte("archive"), 0640); err != nil {
+			t.Fatalf("write archive %s: %v", path, err)
+		}
+	}
+
+	process := &pb.Process{
+		Id:           1,
+		LogFilePath:  outPath,
+		ErrFilePath:  errPath,
+		LogFileCount: 3,
+	}
+	logger := zerolog.New(io.Discard)
+	handler := &Handler{
+		logger:       &logger,
+		databaseById: map[int32]*pb.Process{process.Id: process},
+	}
+
+	previousRotateLogFile := rotateLogFile
+	rotateLogFile = func(filename, rotatedFilename string) (bool, error) {
+		switch filename {
+		case outPath, combinedPath:
+			return true, nil
+		case errPath:
+			return false, errors.New("rotate failed")
+		default:
+			return false, nil
+		}
+	}
+	t.Cleanup(func() {
+		rotateLogFile = previousRotateLogFile
+	})
+
+	handleMaxLogGroup(handler, &logRotationGroup{
+		logFilePath:     outPath,
+		errFilePath:     errPath,
+		combinedLogPath: combinedPath,
+		processes:       []*pb.Process{process},
+	}, utils.Config{
+		LogRotate:         true,
+		LogRotateSize:     1,
+		LogRotateMaxFiles: 3,
+	})
+
+	if _, err := os.Stat(outPath + ".1"); !os.IsNotExist(err) {
+		t.Fatalf("expected successful stdout archive to be pruned, stat error: %v", err)
+	}
+	if _, err := os.Stat(combinedPath + ".1"); !os.IsNotExist(err) {
+		t.Fatalf("expected successful combined archive to be pruned, stat error: %v", err)
+	}
+	if _, err := os.Stat(errPath + ".1"); err != nil {
+		t.Fatalf("expected failed stderr archive to remain, stat error: %v", err)
+	}
+}
+
 func findLogRotationGroup(t *testing.T, groups []*logRotationGroup, logFilePath, errFilePath string) *logRotationGroup {
 	t.Helper()
 

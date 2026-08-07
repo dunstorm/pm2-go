@@ -88,6 +88,28 @@ func TestReadEntriesSkipsMalformedRecords(t *testing.T) {
 	}
 }
 
+func TestReadEntriesBackfillsMalformedFinalTail(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	contents := strings.Join([]string{
+		`{"stream":"stdout","line":"older"}`,
+		`{"stream":"stderr","line":`,
+	}, "\n")
+	if err := os.WriteFile(filePath, []byte(contents), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	entries, err := ReadEntries(filePath, 1)
+	if err != nil {
+		t.Fatalf("read entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected one valid entry, got %d", len(entries))
+	}
+	if entries[0].Line != "older" {
+		t.Fatalf("expected older valid entry, got %#v", entries)
+	}
+}
+
 func TestReadEntriesReadsLargeFinalRecordBeyondInitialWindow(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	largeLine := strings.Repeat("x", 300*1024)

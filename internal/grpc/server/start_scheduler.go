@@ -86,11 +86,13 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 
 	rotatedAny := false
 	rotateFailed := false
+	rotatedPaths := make(map[string]bool, 3)
 
 	rotatedLogPath := group.logFilePath + "." + strconv.Itoa(int(logFileCount))
 	rotated, err := rotateLogFile(group.logFilePath, rotatedLogPath)
 	if rotated {
 		rotatedAny = true
+		rotatedPaths[group.logFilePath] = true
 		handler.logger.Info().Msgf("Rotated log file %s to %s", group.logFilePath, rotatedLogPath)
 	}
 	if err != nil {
@@ -103,6 +105,7 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 	rotated, err = rotateLogFile(group.errFilePath, rotatedErrPath)
 	if rotated {
 		rotatedAny = true
+		rotatedPaths[group.errFilePath] = true
 		handler.logger.Info().Msgf("Rotated err file %s to %s", group.errFilePath, rotatedErrPath)
 	}
 	if err != nil {
@@ -114,6 +117,7 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 	rotated, err = rotateLogFile(group.combinedLogPath, rotatedCombinedPath)
 	if rotated {
 		rotatedAny = true
+		rotatedPaths[group.combinedLogPath] = true
 		handler.logger.Info().Msgf("Rotated combined log file %s to %s", group.combinedLogPath, rotatedCombinedPath)
 	}
 	if err != nil {
@@ -135,31 +139,41 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 		}
 	}
 	handler.mu.Unlock()
-	if rotateFailed {
-		return
-	}
 
 	// if LogFileCount exceeds LogRotateCount, delete oldest log file
 	if nextLogFileCount >= int32(config.LogRotateMaxFiles) {
-		// delete oldest log & err file
 		oldestLogFileIndex := nextLogFileCount - int32(config.LogRotateMaxFiles)
-		err = os.Remove(group.logFilePath + "." + strconv.Itoa(int(oldestLogFileIndex)))
-		if err != nil {
-			handler.logger.Error().Msgf("Error while deleting log file %s: %s", group.logFilePath+"."+strconv.Itoa(int(oldestLogFileIndex)), err)
+		prunePaths := []string{group.logFilePath, group.errFilePath, group.combinedLogPath}
+		if rotateFailed {
+			prunePaths = rotatedLogPaths(group, rotatedPaths)
 		}
-		handler.logger.Info().Msgf("Deleted log file %s", group.logFilePath+"."+strconv.Itoa(int(oldestLogFileIndex)))
+		pruneLogArchives(handler, prunePaths, oldestLogFileIndex)
+	}
+}
 
-		err = os.Remove(group.errFilePath + "." + strconv.Itoa(int(oldestLogFileIndex)))
-		if err != nil {
-			handler.logger.Error().Msgf("Error while deleting log file %s: %s", group.errFilePath+"."+strconv.Itoa(int(oldestLogFileIndex)), err)
+func rotatedLogPaths(group *logRotationGroup, rotatedPaths map[string]bool) []string {
+	paths := make([]string, 0, 3)
+	for _, path := range []string{group.logFilePath, group.errFilePath, group.combinedLogPath} {
+		if rotatedPaths[path] {
+			paths = append(paths, path)
 		}
-		handler.logger.Info().Msgf("Deleted err file %s", group.errFilePath+"."+strconv.Itoa(int(oldestLogFileIndex)))
+	}
+	return paths
+}
 
-		err = os.Remove(group.combinedLogPath + "." + strconv.Itoa(int(oldestLogFileIndex)))
-		if err != nil {
-			handler.logger.Error().Msgf("Error while deleting log file %s: %s", group.combinedLogPath+"."+strconv.Itoa(int(oldestLogFileIndex)), err)
+func pruneLogArchives(handler *Handler, paths []string, index int32) {
+	seen := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		if path == "" || seen[path] {
+			continue
 		}
-		handler.logger.Info().Msgf("Deleted combined log file %s", group.combinedLogPath+"."+strconv.Itoa(int(oldestLogFileIndex)))
+		seen[path] = true
+		archivePath := path + "." + strconv.Itoa(int(index))
+		if err := os.Remove(archivePath); err != nil {
+			handler.logger.Error().Msgf("Error while deleting log file %s: %s", archivePath, err)
+			continue
+		}
+		handler.logger.Info().Msgf("Deleted log file %s", archivePath)
 	}
 }
 

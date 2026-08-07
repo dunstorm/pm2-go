@@ -129,11 +129,53 @@ func ReadEntriesWithOffset(filename string, tail int) ([]Entry, int64, error) {
 }
 
 func ReadEntriesWithCursor(filename string, tail int) ([]Entry, TailCursor, error) {
-	lines, cursor, err := ReadLinesWithCursor(filename, tail)
+	return readEntriesWithGenerationReader(filename, tail, ReadCursorGeneration)
+}
+
+func readEntriesWithGenerationReader(filename string, tail int, readGeneration func(string) string) ([]Entry, TailCursor, error) {
+	file, info, generation, err := openSnapshotFile(filename, readGeneration)
 	if err != nil {
 		return nil, TailCursor{}, err
 	}
+	defer file.Close()
 
+	return readEntriesFromSnapshot(file, info, generation, tail)
+}
+
+func readEntriesFromSnapshot(file *os.File, info os.FileInfo, generation string, tail int) ([]Entry, TailCursor, error) {
+	cursor := TailCursor{
+		Offset:     info.Size(),
+		FileID:     fileIdentity(info),
+		Generation: generation,
+		snapshot:   true,
+	}
+	if tail <= 0 || info.Size() == 0 {
+		return nil, cursor, nil
+	}
+
+	physicalTail := tail
+	for {
+		lines, cursor, err := readTailLinesFromSnapshot(file, info, generation, physicalTail)
+		if err != nil {
+			return nil, TailCursor{}, err
+		}
+
+		entries := parseEntries(lines)
+		if len(entries) >= tail {
+			return entries[len(entries)-tail:], cursor, nil
+		}
+		if len(lines) < physicalTail {
+			return entries, cursor, nil
+		}
+		nextPhysicalTail := physicalTail * 2
+		if nextPhysicalTail <= physicalTail {
+			nextPhysicalTail = len(lines) + 1
+		}
+		physicalTail = nextPhysicalTail
+	}
+}
+
+func parseEntries(lines []string) []Entry {
 	entries := make([]Entry, 0, len(lines))
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
@@ -145,7 +187,7 @@ func ReadEntriesWithCursor(filename string, tail int) ([]Entry, TailCursor, erro
 		}
 		entries = append(entries, entry)
 	}
-	return entries, cursor, nil
+	return entries
 }
 
 func ReadLinesWithCursor(filename string, tail int) ([]string, TailCursor, error) {
