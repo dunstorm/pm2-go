@@ -570,6 +570,57 @@ func TestReadLogDrainsOpenedDescriptorAfterRotation(t *testing.T) {
 	}
 }
 
+func TestReadLogInitialReadDrainsOpenedDescriptorAfterRotation(t *testing.T) {
+	dir := t.TempDir()
+	logFile := dir + "/initial-drain-rotated.log"
+	if err := os.WriteFile(logFile, []byte("first\n"), 0600); err != nil {
+		t.Fatalf("write original log: %v", err)
+	}
+
+	previousAfterStableLogSnapshot := afterStableLogSnapshot
+	rotated := false
+	afterStableLogSnapshot = func(path string) {
+		if rotated || path != logFile {
+			return
+		}
+		rotated = true
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			t.Fatalf("open original for append: %v", err)
+		}
+		if _, err := file.WriteString("second\n"); err != nil {
+			_ = file.Close()
+			t.Fatalf("append original log: %v", err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatalf("close original append: %v", err)
+		}
+		if err := os.Rename(path, path+".1"); err != nil {
+			t.Fatalf("rotate log: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("third\nfourth\n"), 0600); err != nil {
+			t.Fatalf("write replacement log: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		afterStableLogSnapshot = previousAfterStableLogSnapshot
+	})
+
+	logs, err := readLog(logFile, 0, "", 1)
+	if err != nil {
+		t.Fatalf("read initial rotated descriptor: %v", err)
+	}
+	if !rotated {
+		t.Fatal("expected rotation hook to run")
+	}
+	if logs.Offset != int64(len("third\nfourth\n")) {
+		t.Fatalf("expected replacement offset, got %d", logs.Offset)
+	}
+	if strings.Join(logs.Lines, ",") != "first,second,third,fourth" {
+		t.Fatalf("expected initial, drained, and replacement lines, got %#v", logs.Lines)
+	}
+}
+
 func TestReadLogResetsOffsetWhenCursorGenerationChanges(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/flushed.log"

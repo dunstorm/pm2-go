@@ -41,6 +41,7 @@ type tailedFile struct {
 	id         string
 	generation string
 	size       int64
+	partial    []byte
 }
 
 func CombinedPath(stdoutLogPath string) string {
@@ -389,7 +390,7 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 	}
 
 	for {
-		if err := readAvailableTailEntries(tail.reader, handle); err != nil {
+		if err := readAvailableTailEntries(tail, handle); err != nil {
 			return err
 		}
 		pos, err := tail.file.Seek(0, io.SeekCurrent)
@@ -415,7 +416,7 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 
 			nextID := fileIdentity(info)
 			if tail.id != "" && nextID != "" && tail.id != nextID {
-				if err := readAvailableTailEntries(tail.reader, handle); err != nil {
+				if err := readAvailableTailEntries(tail, handle); err != nil {
 					return err
 				}
 				if err := tail.reopen(filename); err != nil {
@@ -430,6 +431,7 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 					if _, err := tail.file.Seek(0, io.SeekStart); err != nil {
 						return err
 					}
+					tail.partial = nil
 				} else if _, err := tail.file.Seek(pos, io.SeekStart); err != nil {
 					return err
 				}
@@ -441,13 +443,20 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 	}
 }
 
-func readAvailableTailEntries(reader *bufio.Reader, handle func(Entry)) error {
+func readAvailableTailEntries(tail *tailedFile, handle func(Entry)) error {
 	for {
-		line, err := reader.ReadString('\n')
+		line, err := tail.reader.ReadString('\n')
 		if err == io.EOF {
+			if line != "" {
+				tail.partial = append(tail.partial, []byte(line)...)
+			}
 			return nil
 		}
 		if line != "" {
+			if len(tail.partial) > 0 {
+				line = string(append(tail.partial, []byte(line)...))
+				tail.partial = nil
+			}
 			entry, parseErr := ParseLine(strings.TrimRight(line, "\n"))
 			if parseErr == nil {
 				handle(entry)
@@ -531,6 +540,10 @@ func readTailLinesWithGenerationReader(filename string, tail int, readGeneration
 	}
 	defer file.Close()
 
+	return readTailLinesFromSnapshot(file, info, generation, tail)
+}
+
+func ReadLinesWithCursorFromSnapshot(file *os.File, info os.FileInfo, generation string, tail int) ([]string, TailCursor, error) {
 	return readTailLinesFromSnapshot(file, info, generation, tail)
 }
 

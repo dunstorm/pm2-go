@@ -507,6 +507,60 @@ func TestTailEntriesFromStartsAtOffset(t *testing.T) {
 	}
 }
 
+func TestTailEntriesRetainsPartialRecordAcrossPolls(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	if err := os.WriteFile(filePath, nil, 0600); err != nil {
+		t.Fatalf("write empty log: %v", err)
+	}
+
+	entries := make(chan Entry, 1)
+	errs := make(chan error, 1)
+	go func() {
+		errs <- TailEntriesFrom(filePath, 0, func(entry Entry) {
+			entries <- entry
+		})
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatalf("open log: %v", err)
+	}
+	if _, err := file.WriteString(`{"stream":"stdout","line":"part`); err != nil {
+		_ = file.Close()
+		t.Fatalf("write partial log: %v", err)
+	}
+
+	select {
+	case entry := <-entries:
+		_ = file.Close()
+		t.Fatalf("expected no entry before newline, got %#v", entry)
+	case err := <-errs:
+		_ = file.Close()
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	if _, err := file.WriteString(`ial"}` + "\n"); err != nil {
+		_ = file.Close()
+		t.Fatalf("finish partial log: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close log: %v", err)
+	}
+
+	select {
+	case entry := <-entries:
+		if entry.Stream != StdoutStream || entry.Line != "partial" {
+			t.Fatalf("expected completed partial entry, got %#v", entry)
+		}
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for completed partial entry")
+	}
+}
+
 func TestTailEntriesReopensAfterRotation(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	if err := os.WriteFile(filePath, []byte(`{"stream":"stdout","line":"before"}`+"\n"), 0600); err != nil {

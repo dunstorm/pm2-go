@@ -55,7 +55,7 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 
 	initialRead := offset == 0 && (fileID == "" || offsetReset)
 	if initialRead {
-		return readInitialLog(filePath, tailLines)
+		return readInitialLogFromSnapshot(filePath, file, info, generation, currentPhysicalFileID, tailLines)
 	}
 
 	readStart := offset
@@ -118,10 +118,42 @@ func readReplacementLogAfterRotation(filePath string) (logResponse, error) {
 }
 
 func readInitialLog(filePath string, tailLines int) (logResponse, error) {
-	lines, cursor, err := logstore.ReadLinesWithCursor(filePath, tailLines)
+	file, info, generation, err := openStableLogSnapshot(filePath)
 	if err != nil {
 		return logResponse{}, err
 	}
+	defer file.Close()
+
+	if info.IsDir() {
+		return logResponse{}, errors.New("log path is a directory")
+	}
+
+	return readInitialLogFromSnapshot(filePath, file, info, generation, logPhysicalFileID(info), tailLines)
+}
+
+func readInitialLogFromSnapshot(filePath string, file *os.File, info os.FileInfo, generation, physicalFileID string, tailLines int) (logResponse, error) {
+	lines, cursor, err := logstore.ReadLinesWithCursorFromSnapshot(file, info, generation, tailLines)
+	if err != nil {
+		return logResponse{}, err
+	}
+	if logCursorGenerationChangedSinceSnapshot(filePath, generation) {
+		return readInitialLog(filePath, tailLines)
+	}
+	if logPathRotatedSinceSnapshot(filePath, physicalFileID) {
+		drainedLines, _, err := drainRotatedLogDescriptor(file, cursor.Offset)
+		if err != nil {
+			return logResponse{}, err
+		}
+		lines = append(lines, drainedLines...)
+
+		replacementLogs, err := readReplacementLogAfterRotation(filePath)
+		if err != nil {
+			return logResponse{}, err
+		}
+		replacementLogs.Lines = append(lines, replacementLogs.Lines...)
+		return replacementLogs, nil
+	}
+
 	return logResponse{
 		FileID: logFileIDFromParts(cursor.FileID, cursor.Generation),
 		Offset: cursor.Offset,
@@ -200,6 +232,9 @@ func readIncrementalLogLines(reader io.Reader, readStart, fileSize int64) ([]str
 
 func drainRotatedLogDescriptor(file *os.File, offset int64) ([]string, int64, error) {
 	lines := []string{}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return nil, offset, err
+	}
 	for {
 		info, err := file.Stat()
 		if err != nil {
