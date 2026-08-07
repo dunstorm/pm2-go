@@ -226,6 +226,14 @@ func readIncrementalLogLines(reader io.Reader, readStart, fileSize int64) ([]str
 			}
 		}
 	}
+	if len(contents) > 0 && contents[len(contents)-1] != '\n' {
+		lastNewline := bytes.LastIndexByte(contents, '\n')
+		if lastNewline < 0 {
+			return nil, readStart, nil
+		}
+		contents = contents[:lastNewline+1]
+		consumedBytes = lastNewline + 1
+	}
 
 	return splitLogLines(string(contents)), readStart + int64(consumedBytes), nil
 }
@@ -296,26 +304,16 @@ func readInitialCombinedLog(filePath string, tailLines int) (logResponse, error)
 		tailLines = 200
 	}
 
-	physicalTail := tailLines
-	for {
-		lines, cursor, err := logstore.ReadLinesWithCursor(filePath, physicalTail)
-		if err != nil {
-			return logResponse{}, err
-		}
-		validLines := validCombinedLogLines(lines)
-		if len(validLines) > tailLines {
-			validLines = validLines[len(validLines)-tailLines:]
-		}
-		if len(validLines) >= tailLines || len(lines) < physicalTail {
-			return logResponse{
-				FileID: logFileIDFromParts(cursor.FileID, cursor.Generation),
-				Offset: cursor.Offset,
-				Size:   cursor.Offset,
-				Lines:  validLines,
-			}, nil
-		}
-		physicalTail *= 2
+	entries, cursor, err := logstore.ReadEntriesWithCursor(filePath, tailLines)
+	if err != nil {
+		return logResponse{}, err
 	}
+	return logResponse{
+		FileID: logFileIDFromParts(cursor.FileID, cursor.Generation),
+		Offset: cursor.Offset,
+		Size:   cursor.Offset,
+		Lines:  formatLogEntries(entries),
+	}, nil
 }
 
 func validCombinedLogLines(lines []string) []string {

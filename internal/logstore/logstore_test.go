@@ -194,6 +194,125 @@ func TestReadEntriesWithCursorReturnsSnapshotIdentity(t *testing.T) {
 	}
 }
 
+func TestReadEntriesWithCursorHoldsIncompleteFinalRecord(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	completeLine := `{"stream":"stdout","line":"first"}` + "\n"
+	partialLine := `{"stream":"stderr","line":"sec`
+	if err := os.WriteFile(filePath, []byte(completeLine+partialLine), 0600); err != nil {
+		t.Fatalf("write partial log: %v", err)
+	}
+
+	entries, cursor, err := ReadEntriesWithCursor(filePath, 10)
+	if err != nil {
+		t.Fatalf("read entries: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Line != "first" {
+		t.Fatalf("expected only complete entry, got %#v", entries)
+	}
+	if cursor.Offset != int64(len(completeLine)) {
+		t.Fatalf("expected cursor to hold incomplete record at %d, got %d", len(completeLine), cursor.Offset)
+	}
+
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatalf("open log for append: %v", err)
+	}
+	if _, err := file.WriteString(`ond"}` + "\n"); err != nil {
+		_ = file.Close()
+		t.Fatalf("finish partial log: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close log: %v", err)
+	}
+
+	tailedEntries := make(chan Entry, 1)
+	errs := make(chan error, 1)
+	go func() {
+		errs <- TailEntriesFromCursor(filePath, cursor, func(entry Entry) {
+			tailedEntries <- entry
+		})
+	}()
+
+	select {
+	case entry := <-tailedEntries:
+		if entry.Stream != StderrStream || entry.Line != "second" {
+			t.Fatalf("expected completed tail entry, got %#v", entry)
+		}
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for completed tail entry")
+	}
+}
+
+func TestReadMergedEntriesDrainsRotatedCombinedSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	combinedLogPath := filepath.Join(dir, "api-combined.jsonl")
+	firstLine := `{"stream":"stdout","line":"first"}` + "\n"
+	if err := os.WriteFile(combinedLogPath, []byte(firstLine), 0600); err != nil {
+		t.Fatalf("write combined log: %v", err)
+	}
+	info, err := os.Stat(combinedLogPath)
+	if err != nil {
+		t.Fatalf("stat combined log: %v", err)
+	}
+	if fileIdentity(info) == "" {
+		t.Skip("file identity is unavailable on this platform")
+	}
+
+	previousAfterStableLogstoreSnapshot := afterStableLogstoreSnapshot
+	rotated := false
+	afterStableLogstoreSnapshot = func(path string) {
+		if rotated || path != combinedLogPath {
+			return
+		}
+		rotated = true
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			t.Fatalf("open combined log for append: %v", err)
+		}
+		if _, err := file.WriteString(`{"stream":"stdout","line":"second"}` + "\n"); err != nil {
+			_ = file.Close()
+			t.Fatalf("append combined log: %v", err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatalf("close appended combined log: %v", err)
+		}
+		if err := os.Rename(path, path+".1"); err != nil {
+			t.Fatalf("rotate combined log: %v", err)
+		}
+		replacement := strings.Join([]string{
+			`{"stream":"stderr","line":"third"}`,
+			`{"stream":"stdout","line":"fourth"}`,
+			"",
+		}, "\n")
+		if err := os.WriteFile(path, []byte(replacement), 0600); err != nil {
+			t.Fatalf("write replacement combined log: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		afterStableLogstoreSnapshot = previousAfterStableLogstoreSnapshot
+	})
+
+	entries, cursor, err := ReadMergedEntries(combinedLogPath, "", "", 10)
+	if err != nil {
+		t.Fatalf("read merged entries: %v", err)
+	}
+	if !rotated {
+		t.Fatal("expected rotation hook to run")
+	}
+	got := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		got = append(got, entry.Line)
+	}
+	if strings.Join(got, ",") != "first,second,third,fourth" {
+		t.Fatalf("expected snapshot, drained, and replacement entries, got %#v", entries)
+	}
+	if cursor.Offset != int64(len(`{"stream":"stderr","line":"third"}`+"\n"+`{"stream":"stdout","line":"fourth"}`+"\n")) {
+		t.Fatalf("expected replacement cursor offset, got %d", cursor.Offset)
+	}
+}
+
 func TestBumpCursorGenerationAtomicallyReplacesExistingFile(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "api-combined.jsonl")

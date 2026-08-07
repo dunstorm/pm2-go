@@ -21,6 +21,7 @@ const (
 )
 
 var cursorGenerationCounter atomic.Int64
+var afterStableLogstoreSnapshot = func(string) {}
 
 type Entry struct {
 	Timestamp string `json:"timestamp"`
@@ -165,11 +166,46 @@ func readEntriesWithGenerationReader(filename string, tail int, readGeneration f
 		return nil, TailCursor{}, err
 	}
 	defer file.Close()
+	afterStableLogstoreSnapshot(filename)
 
-	return readEntriesFromSnapshot(file, info, generation, tail)
+	entries, cursor, err := readEntriesFromSnapshot(file, info, generation, tail)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	if readGeneration(filename) != generation {
+		return readEntriesWithGenerationReader(filename, tail, readGeneration)
+	}
+	if !snapshotPathRotated(filename, cursor.FileID) {
+		return entries, cursor, nil
+	}
+
+	replacementEntries, replacementCursor, err := readEntriesWithGenerationReader(filename, tail, readGeneration)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	if tail <= 0 {
+		return nil, replacementCursor, nil
+	}
+
+	drainedLines, _, err := drainLinesFromDescriptor(file, cursor.Offset)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	entries = append(entries, parseEntries(drainedLines)...)
+	entries = append(entries, replacementEntries...)
+	if len(entries) > tail {
+		entries = entries[len(entries)-tail:]
+	}
+	return entries, replacementCursor, nil
 }
 
 func readEntriesFromSnapshot(file *os.File, info os.FileInfo, generation string, tail int) ([]Entry, TailCursor, error) {
+	completeSize, err := completeLineOffset(file, info.Size())
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	info = snapshotFileInfo{FileInfo: info, size: completeSize}
+
 	cursor := TailCursor{
 		Offset:     info.Size(),
 		FileID:     fileIdentity(info),
@@ -539,8 +575,37 @@ func readTailLinesWithGenerationReader(filename string, tail int, readGeneration
 		return nil, TailCursor{}, err
 	}
 	defer file.Close()
+	afterStableLogstoreSnapshot(filename)
 
-	return readTailLinesFromSnapshot(file, info, generation, tail)
+	lines, cursor, err := readTailLinesFromSnapshot(file, info, generation, tail)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	if readGeneration(filename) != generation {
+		return readTailLinesWithGenerationReader(filename, tail, readGeneration)
+	}
+	if !snapshotPathRotated(filename, cursor.FileID) {
+		return lines, cursor, nil
+	}
+
+	replacementLines, replacementCursor, err := readTailLinesWithGenerationReader(filename, tail, readGeneration)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	if tail <= 0 {
+		return nil, replacementCursor, nil
+	}
+
+	drainedLines, _, err := drainLinesFromDescriptor(file, cursor.Offset)
+	if err != nil {
+		return nil, TailCursor{}, err
+	}
+	lines = append(lines, drainedLines...)
+	lines = append(lines, replacementLines...)
+	if len(lines) > tail {
+		lines = lines[len(lines)-tail:]
+	}
+	return lines, replacementCursor, nil
 }
 
 func ReadLinesWithCursorFromSnapshot(file *os.File, info os.FileInfo, generation string, tail int) ([]string, TailCursor, error) {
@@ -622,6 +687,79 @@ func readTailLinesFromSnapshot(file *os.File, info os.FileInfo, generation strin
 	return lines, cursor, nil
 }
 
+type snapshotFileInfo struct {
+	os.FileInfo
+	size int64
+}
+
+func (info snapshotFileInfo) Size() int64 {
+	return info.size
+}
+
+func completeLineOffset(file *os.File, size int64) (int64, error) {
+	if size <= 0 {
+		return 0, nil
+	}
+
+	var lastByte [1]byte
+	n, err := file.ReadAt(lastByte[:], size-1)
+	if err != nil && err != io.EOF {
+		return 0, err
+	}
+	if n == 1 && lastByte[0] == '\n' {
+		return size, nil
+	}
+
+	const chunkSize int64 = 256 * 1024
+	position := size
+	for position > 0 {
+		readSize := minInt64(position, chunkSize)
+		position -= readSize
+
+		chunk := make([]byte, readSize)
+		n, err := file.ReadAt(chunk, position)
+		if err != nil && err != io.EOF {
+			return 0, err
+		}
+		newlineIndex := bytes.LastIndexByte(chunk[:n], '\n')
+		if newlineIndex >= 0 {
+			return position + int64(newlineIndex) + 1, nil
+		}
+	}
+	return 0, nil
+}
+
+func snapshotPathRotated(filename, snapshotID string) bool {
+	if snapshotID == "" {
+		return false
+	}
+	info, err := os.Stat(filename)
+	if err != nil {
+		return true
+	}
+	currentID := fileIdentity(info)
+	return currentID != "" && currentID != snapshotID
+}
+
+func drainLinesFromDescriptor(file *os.File, offset int64) ([]string, int64, error) {
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return nil, offset, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return nil, offset, err
+	}
+	if offset >= info.Size() {
+		return nil, offset, nil
+	}
+
+	contents, err := io.ReadAll(file)
+	if err != nil {
+		return nil, offset, err
+	}
+	return splitLogLines(contents), offset + int64(len(contents)), nil
+}
+
 func tailLineCount(newlineCount int, endsWithoutNewline bool, atStart bool) int {
 	if newlineCount == 0 && !endsWithoutNewline {
 		return 0
@@ -655,6 +793,14 @@ func splitTailLines(buffer []byte, tail int, atStart bool) []string {
 	}
 	if len(lines) > tail {
 		lines = lines[len(lines)-tail:]
+	}
+	return lines
+}
+
+func splitLogLines(buffer []byte) []string {
+	lines := strings.Split(strings.TrimRight(string(buffer), "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return nil
 	}
 	return lines
 }

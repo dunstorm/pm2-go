@@ -896,6 +896,65 @@ func TestReadCombinedLogUsesKnownZeroOffsetAsIncrementalCursor(t *testing.T) {
 	}
 }
 
+func TestReadCombinedLogRetainsIncompleteIncrementalRecord(t *testing.T) {
+	dir := t.TempDir()
+	combinedLogFile := logstore.CombinedPath(dir + "/api-out.log")
+	completeLine := `{"timestamp":"2026-08-07T10:00:00Z","stream":"stdout","line":"first"}` + "\n"
+	if err := os.WriteFile(combinedLogFile, []byte(completeLine), 0600); err != nil {
+		t.Fatalf("write combined log: %v", err)
+	}
+
+	first, err := readCombinedLog(combinedLogFile, 0, "", 10)
+	if err != nil {
+		t.Fatalf("read initial combined log: %v", err)
+	}
+	if first.Offset != int64(len(completeLine)) {
+		t.Fatalf("expected initial offset %d, got %d", len(completeLine), first.Offset)
+	}
+
+	file, err := os.OpenFile(combinedLogFile, os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		t.Fatalf("open combined log for append: %v", err)
+	}
+	if _, err := file.WriteString(`{"timestamp":"2026-08-07T10:00:01Z","stream":"stderr","line":"sec`); err != nil {
+		_ = file.Close()
+		t.Fatalf("write partial combined log: %v", err)
+	}
+
+	second, err := readCombinedLog(combinedLogFile, first.Offset, first.FileID, 10)
+	if err != nil {
+		_ = file.Close()
+		t.Fatalf("read partial combined log: %v", err)
+	}
+	if len(second.Lines) != 0 {
+		_ = file.Close()
+		t.Fatalf("expected no formatted line before newline, got %#v", second.Lines)
+	}
+	if second.Offset != first.Offset {
+		_ = file.Close()
+		t.Fatalf("expected cursor to stay at %d, got %d", first.Offset, second.Offset)
+	}
+
+	if _, err := file.WriteString(`ond"}` + "\n"); err != nil {
+		_ = file.Close()
+		t.Fatalf("finish partial combined log: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close combined log: %v", err)
+	}
+
+	third, err := readCombinedLog(combinedLogFile, second.Offset, second.FileID, 10)
+	if err != nil {
+		t.Fatalf("read completed combined log: %v", err)
+	}
+	if len(third.Lines) != 1 || !strings.Contains(third.Lines[0], "second") {
+		t.Fatalf("expected completed formatted line, got %#v", third.Lines)
+	}
+	if third.Offset != int64(len(completeLine)+len(`{"timestamp":"2026-08-07T10:00:01Z","stream":"stderr","line":"second"}`+"\n")) {
+		t.Fatalf("expected completed cursor offset, got %d", third.Offset)
+	}
+}
+
 func TestReadCombinedLogBackfillsMalformedInitialTail(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/api-out.log"
