@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
 )
+
+const maxIncrementalLogReadBytes = 1024 * 1024
 
 type logResponse struct {
 	FileID string   `json:"fileId"`
@@ -64,18 +67,45 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 		return logResponse{}, err
 	}
 
-	contents, err := io.ReadAll(reader)
+	lines, consumedOffset, err := readIncrementalLogLines(reader, readStart, size)
 	if err != nil {
 		return logResponse{}, err
 	}
-	lines := splitLogLines(string(contents))
-	consumedOffset := readStart + int64(len(contents))
 	return logResponse{
 		FileID: currentFileID,
 		Offset: consumedOffset,
 		Size:   consumedOffset,
 		Lines:  lines,
 	}, nil
+}
+
+func readIncrementalLogLines(reader io.Reader, readStart, fileSize int64) ([]string, int64, error) {
+	remaining := fileSize - readStart
+	if remaining <= 0 {
+		return nil, readStart, nil
+	}
+	limit := remaining
+	if limit > maxIncrementalLogReadBytes {
+		limit = maxIncrementalLogReadBytes
+	}
+
+	contents, err := io.ReadAll(io.LimitReader(reader, limit))
+	if err != nil {
+		return nil, 0, err
+	}
+	consumedBytes := len(contents)
+	if int64(consumedBytes) < remaining {
+		lastNewline := bytes.LastIndexByte(contents, '\n')
+		if lastNewline >= 0 {
+			contents = contents[:lastNewline+1]
+			consumedBytes = lastNewline + 1
+		} else {
+			contents = nil
+			consumedBytes = int(limit)
+		}
+	}
+
+	return splitLogLines(string(contents)), readStart + int64(consumedBytes), nil
 }
 
 func readCombinedLog(filePath string, offset int64, fileID string, tailLines int) (logResponse, error) {

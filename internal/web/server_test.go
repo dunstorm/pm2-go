@@ -355,6 +355,30 @@ func TestReadLogReturnsConsumedOffset(t *testing.T) {
 	}
 }
 
+func TestReadLogBoundsFarBehindIncrementalRead(t *testing.T) {
+	logFile := t.TempDir() + "/incremental-large.log"
+	prefix := "first\n"
+	contents := prefix + strings.Repeat("x", maxIncrementalLogReadBytes+1024) + "\nsecond\n"
+	if err := os.WriteFile(logFile, []byte(contents), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	logs, err := readLog(logFile, int64(len(prefix)), "", 10)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	expectedOffset := int64(len(prefix) + maxIncrementalLogReadBytes)
+	if logs.Offset != expectedOffset {
+		t.Fatalf("expected bounded consumed offset %d, got %d", expectedOffset, logs.Offset)
+	}
+	if logs.Size != expectedOffset {
+		t.Fatalf("expected bounded response size %d, got %d", expectedOffset, logs.Size)
+	}
+	if len(logs.Lines) != 0 {
+		t.Fatalf("expected oversized partial line to be skipped until a complete line is available, got %#v", logs.Lines)
+	}
+}
+
 func TestReadLogResetsOffsetWhenFileChanges(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/rotated.log"

@@ -24,6 +24,8 @@ const state = {
   chartTimer: null,
   processRefreshPromise: null,
   processRefreshQueued: false,
+  logRequestPromise: null,
+  logRequestQueued: false,
   processRequestSeq: 0,
   detailRequestSeq: 0,
   logRequestSeq: 0,
@@ -354,6 +356,27 @@ async function loadEvents() {
 }
 
 async function loadLogs(reset, processId = state.selectedId, stream = state.logStream) {
+  if (state.logRequestPromise) {
+    if (reset) resetLogs(false);
+    state.logRequestQueued = true;
+    return state.logRequestPromise;
+  }
+  const logPromise = runLoadLogs(reset, processId, stream).finally(() => {
+    if (state.logRequestPromise === logPromise) {
+      state.logRequestPromise = null;
+    }
+    if (state.logRequestQueued) {
+      state.logRequestQueued = false;
+      window.setTimeout(() => {
+        if (isProcessId(state.selectedId)) loadLogs(false);
+      }, 0);
+    }
+  });
+  state.logRequestPromise = logPromise;
+  return logPromise;
+}
+
+async function runLoadLogs(reset, processId = state.selectedId, stream = state.logStream) {
   if (!isProcessId(processId) || state.selectedId !== processId) {
     renderLogs();
     return;
