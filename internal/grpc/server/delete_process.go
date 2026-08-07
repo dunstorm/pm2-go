@@ -20,6 +20,7 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 		}, nil
 	}
 
+	api.bumpOperationGenerationLocked(in.Id)
 	suppressProcessRestart(process)
 	if found := api.processes[in.Id]; found != nil {
 		_ = utils.KillProcessGroup(found)
@@ -29,6 +30,7 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 	delete(api.databaseByName, process.Name)
 	delete(api.processes, in.Id)
 	delete(api.metricsUpdatedAt, in.Id)
+	api.clearOperationGenerationLocked(in.Id)
 	api.persistStateLocked()
 
 	return &pb.DeleteProcessResponse{

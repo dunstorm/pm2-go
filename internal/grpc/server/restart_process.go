@@ -108,6 +108,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	}
 
 	found := api.processes[in.Id]
+	operationGeneration := api.bumpOperationGenerationLocked(in.Id)
 	pid := int32(0)
 	if found != nil {
 		if in.Graceful {
@@ -135,7 +136,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 
 	api.mu.Lock()
 	defer api.mu.Unlock()
-	if api.databaseById[in.Id] != currentProcess {
+	if api.databaseById[in.Id] != currentProcess || api.operationGenerationLocked(in.Id) != operationGeneration {
 		return nil, status.Error(409, "process changed during restart")
 	}
 

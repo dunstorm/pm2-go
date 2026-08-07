@@ -26,6 +26,7 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 		}, nil
 	}
 
+	api.bumpOperationGenerationLocked(in.Id)
 	process.SetStatus("stopped")
 	process.ResetCPUMemory()
 	process.StopSignal = true
