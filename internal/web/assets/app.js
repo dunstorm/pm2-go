@@ -45,6 +45,30 @@ const viewMeta = {
   },
 };
 
+function icon(name, className = "") {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("icon");
+  if (className) {
+    svg.classList.add(...className.split(" ").filter(Boolean));
+  }
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#icon-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+function label(text) {
+  const span = document.createElement("span");
+  span.textContent = text;
+  return span;
+}
+
+function setIconLabel(element, iconName, text) {
+  element.replaceChildren(icon(iconName), label(text));
+}
+
 const els = {
   panels: document.querySelectorAll(".view-panel"),
   navButtons: document.querySelectorAll("[data-view]"),
@@ -177,7 +201,7 @@ function bindEvents() {
 function initTheme() {
   const theme = window.localStorage.getItem("pm2-go-theme") || "light";
   document.documentElement.setAttribute("data-theme", theme);
-  els.themeToggle.textContent = theme === "dark" ? "Light" : "Dark";
+  renderThemeButton(theme);
 }
 
 function toggleTheme() {
@@ -185,8 +209,12 @@ function toggleTheme() {
   const next = current === "dark" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", next);
   window.localStorage.setItem("pm2-go-theme", next);
-  els.themeToggle.textContent = next === "dark" ? "Light" : "Dark";
+  renderThemeButton(next);
   renderCharts();
+}
+
+function renderThemeButton(theme) {
+  setIconLabel(els.themeToggle, theme === "dark" ? "sun" : "moon", theme === "dark" ? "Light" : "Dark");
 }
 
 function switchView(view) {
@@ -360,9 +388,9 @@ function renderSession() {
   const remote = Boolean(state.session.allow_remote);
   const modeText = readOnly ? "Read-only" : "Read-write";
   els.railMode.textContent = modeText;
-  els.railBind.textContent = remote ? "remote bind" : "loopback";
-  els.readOnlyBadge.textContent = modeText;
-  els.settingsModePill.textContent = modeText;
+  setIconLabel(els.railBind, remote ? "activity" : "shield", remote ? "remote bind" : "loopback");
+  setIconLabel(els.readOnlyBadge, readOnly ? "shield" : "key", modeText);
+  setIconLabel(els.settingsModePill, readOnly ? "shield" : "key", modeText);
   els.readOnlyBadge.className = `mode-badge ${readOnly ? "mode-read-only" : "mode-read-write"}`;
   els.settingsModePill.className = els.readOnlyBadge.className;
 }
@@ -424,15 +452,16 @@ function renderHealthBreakdown() {
     delayed: state.processes.filter((process) => process.next_start_at).length,
   };
   const rows = [
-    ["Auto restart policies", counts.autorestart],
-    ["Health checks", counts.health],
-    ["Watch reloads", counts.watch],
-    ["Delayed starts", counts.delayed],
-  ].map(([label, value]) => {
+    ["rotate-cw", "Auto restart policies", counts.autorestart],
+    ["activity", "Health checks", counts.health],
+    ["refresh-cw", "Watch reloads", counts.watch],
+    ["history", "Delayed starts", counts.delayed],
+  ].map(([iconName, text, value]) => {
     const row = document.createElement("div");
     row.className = "health-row";
     const name = document.createElement("span");
-    name.textContent = label;
+    name.className = "icon-label";
+    name.append(icon(iconName), label(text));
     const count = document.createElement("strong");
     count.textContent = String(value);
     row.append(name, count);
@@ -449,12 +478,15 @@ function priorityRow(process) {
 
   const name = document.createElement("span");
   name.className = "priority-name";
+  const nameHeader = document.createElement("span");
+  nameHeader.className = "row-title";
   const strong = document.createElement("strong");
   strong.textContent = process.name || `process-${process.id}`;
+  nameHeader.append(processIcon(process), strong);
   const sub = document.createElement("small");
   sub.className = "muted-line";
   sub.textContent = `${process.cpu || "0.0%"} CPU / ${process.memory || "0.0MB"}`;
-  name.append(strong, sub);
+  name.append(nameHeader, sub);
   row.append(name, statusPill(process.status));
   return row;
 }
@@ -481,12 +513,15 @@ function processTableRow(process) {
   const name = document.createElement("td");
   const nameWrap = document.createElement("div");
   nameWrap.className = "process-name";
+  const nameHeader = document.createElement("span");
+  nameHeader.className = "row-title";
   const title = document.createElement("strong");
   title.textContent = process.name || `process-${process.id}`;
+  nameHeader.append(processIcon(process), title);
   const subline = document.createElement("span");
   subline.className = "process-subline";
   subline.textContent = commandText(process) || process.cwd || "No command";
-  nameWrap.append(title, subline);
+  nameWrap.append(nameHeader, subline);
   name.append(nameWrap);
 
   const status = document.createElement("td");
@@ -682,11 +717,12 @@ function fillEventList(list, events, limit) {
 
 function eventItem(event) {
   const item = document.createElement("li");
+  const eventIcon = icon(event.type === "action" ? "activity" : "history", "event-icon");
   const title = document.createElement("strong");
   title.textContent = [event.process_name, event.type].filter(Boolean).join(" / ") || event.type || "event";
   const body = document.createElement("span");
   body.textContent = `${formatTime(event.timestamp)} - ${event.message || ""}`;
-  item.append(title, body);
+  item.append(eventIcon, title, body);
   return item;
 }
 
@@ -734,12 +770,13 @@ function renderAdminSettings() {
     ...items.map((entry) => {
       const item = document.createElement("div");
       item.className = "posture-item";
+      const itemIcon = icon(postureIcon(entry.title), "posture-icon");
       const title = document.createElement("strong");
       title.textContent = entry.title;
       const body = document.createElement("p");
       body.className = "muted-line";
       body.textContent = entry.body;
-      item.append(title, body);
+      item.append(itemIcon, title, body);
       return item;
     }),
   );
@@ -878,7 +915,7 @@ function openConfirm(action, id, process) {
   els.confirmCopy.textContent = action === "delete"
     ? "This removes the process from pm2-go daemon management."
     : "This stops the live process until it is started again.";
-  els.confirmRun.textContent = actionLabel(action);
+  setIconLabel(els.confirmRun, action === "delete" ? "trash" : "square", actionLabel(action));
   els.confirmRun.classList.toggle("button-danger", action === "delete");
   els.confirmModal.hidden = false;
   document.body.classList.add("modal-open");
@@ -968,17 +1005,17 @@ function policyTags(process) {
   const wrap = document.createElement("div");
   wrap.className = "policy-tags";
   const tags = [];
-  if (process.auto_restart) tags.push(["auto", "good"]);
-  if (process.health_configured) tags.push(["health", "good"]);
-  if (process.watch) tags.push(["watch", "warn"]);
-  if (process.cron_restart) tags.push(["cron", "warn"]);
-  if (process.max_memory_restart) tags.push(["memory cap", "warn"]);
-  if (tags.length === 0) tags.push(["manual", ""]);
+  if (process.auto_restart) tags.push(["rotate-cw", "auto", "good"]);
+  if (process.health_configured) tags.push(["activity", "health", "good"]);
+  if (process.watch) tags.push(["refresh-cw", "watch", "warn"]);
+  if (process.cron_restart) tags.push(["history", "cron", "warn"]);
+  if (process.max_memory_restart) tags.push(["database", "memory cap", "warn"]);
+  if (tags.length === 0) tags.push(["square", "manual", ""]);
 
-  tags.forEach(([label, tone]) => {
+  tags.forEach(([iconName, text, tone]) => {
     const tag = document.createElement("span");
     tag.className = `policy-tag ${tone}`;
-    tag.textContent = label;
+    tag.append(icon(iconName), label(text));
     wrap.append(tag);
   });
   return wrap;
@@ -988,7 +1025,7 @@ function statusPill(status) {
   const pill = document.createElement("span");
   const normalized = normalizeStatus(status);
   pill.className = `status-pill status-${normalized}`;
-  pill.textContent = normalized;
+  pill.append(icon(statusIcon(normalized)), label(normalized));
   return pill;
 }
 
@@ -1008,8 +1045,8 @@ function textCell(text, className = "") {
 
 function emptyText(text) {
   const item = document.createElement("span");
-  item.className = "muted-line";
-  item.textContent = text;
+  item.className = "muted-line icon-label";
+  item.append(icon("server"), label(text));
   return item;
 }
 
@@ -1063,6 +1100,31 @@ function processPriority(process) {
   if (status === "stopped") return 2;
   if (status === "unknown") return 3;
   return 4;
+}
+
+function processIcon(process) {
+  const haystack = `${process.name || ""} ${process.executable_path || ""} ${(process.args || []).join(" ")}`.toLowerCase();
+  if (haystack.includes("python") || haystack.includes(".py")) return icon("file-code", "process-glyph");
+  if (haystack.includes("node") || haystack.includes("npm") || haystack.includes(".js")) return icon("terminal", "process-glyph");
+  if (haystack.includes("go")) return icon("server", "process-glyph");
+  if (haystack.includes("sh") || haystack.includes("bash") || haystack.includes("zsh")) return icon("terminal", "process-glyph");
+  return icon("server", "process-glyph");
+}
+
+function statusIcon(status) {
+  if (status === "online") return "check-circle";
+  if (status === "unhealthy") return "alert-triangle";
+  if (status === "stopped" || status === "errored") return "square";
+  return "activity";
+}
+
+function postureIcon(title) {
+  const value = title.toLowerCase();
+  if (value.includes("locked") || value.includes("enabled")) return "shield";
+  if (value.includes("binding")) return "server";
+  if (value.includes("token")) return "key";
+  if (value.includes("reload") || value.includes("embedded")) return "refresh-cw";
+  return "settings";
 }
 
 function parsePercent(value) {

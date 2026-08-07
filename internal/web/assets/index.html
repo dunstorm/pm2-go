@@ -9,34 +9,188 @@
     <script src="/assets/app.js" defer></script>
   </head>
   <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-activity" viewBox="0 0 24 24">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+      </symbol>
+      <symbol id="icon-alert-triangle" viewBox="0 0 24 24">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+        <path d="M12 9v4"></path>
+        <path d="M12 17h.01"></path>
+      </symbol>
+      <symbol id="icon-chart" viewBox="0 0 24 24">
+        <path d="M3 3v18h18"></path>
+        <path d="m19 9-5 5-4-4-3 3"></path>
+      </symbol>
+      <symbol id="icon-check-circle" viewBox="0 0 24 24">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+        <path d="m9 11 3 3L22 4"></path>
+      </symbol>
+      <symbol id="icon-chevron-right" viewBox="0 0 24 24">
+        <path d="m9 18 6-6-6-6"></path>
+      </symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24">
+        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </symbol>
+      <symbol id="icon-cpu" viewBox="0 0 24 24">
+        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+        <rect x="9" y="9" width="6" height="6"></rect>
+        <path d="M9 1v3"></path>
+        <path d="M15 1v3"></path>
+        <path d="M9 20v3"></path>
+        <path d="M15 20v3"></path>
+        <path d="M20 9h3"></path>
+        <path d="M20 14h3"></path>
+        <path d="M1 9h3"></path>
+        <path d="M1 14h3"></path>
+      </symbol>
+      <symbol id="icon-database" viewBox="0 0 24 24">
+        <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+        <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path>
+        <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path>
+      </symbol>
+      <symbol id="icon-file-code" viewBox="0 0 24 24">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path>
+        <path d="M14 2v6h6"></path>
+        <path d="m10 13-2 2 2 2"></path>
+        <path d="m14 17 2-2-2-2"></path>
+      </symbol>
+      <symbol id="icon-history" viewBox="0 0 24 24">
+        <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+        <path d="M3 3v6h6"></path>
+        <path d="M12 7v5l3 2"></path>
+      </symbol>
+      <symbol id="icon-key" viewBox="0 0 24 24">
+        <circle cx="7.5" cy="15.5" r="5.5"></circle>
+        <path d="m21 2-9.6 9.6"></path>
+        <path d="m15.5 7.5 3 3L22 7"></path>
+      </symbol>
+      <symbol id="icon-layout-dashboard" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="7" height="9" rx="1"></rect>
+        <rect x="14" y="3" width="7" height="5" rx="1"></rect>
+        <rect x="14" y="12" width="7" height="9" rx="1"></rect>
+        <rect x="3" y="16" width="7" height="5" rx="1"></rect>
+      </symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24">
+        <path d="M8 6h13"></path>
+        <path d="M8 12h13"></path>
+        <path d="M8 18h13"></path>
+        <path d="M3 6h.01"></path>
+        <path d="M3 12h.01"></path>
+        <path d="M3 18h.01"></path>
+      </symbol>
+      <symbol id="icon-log-out" viewBox="0 0 24 24">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+        <path d="m16 17 5-5-5-5"></path>
+        <path d="M21 12H9"></path>
+      </symbol>
+      <symbol id="icon-maximize" viewBox="0 0 24 24">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+        <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+        <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+        <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+      </symbol>
+      <symbol id="icon-moon" viewBox="0 0 24 24">
+        <path d="M12 3a6 6 0 0 0 9 7.4A9 9 0 1 1 12 3Z"></path>
+      </symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24">
+        <polygon points="6 3 20 12 6 21 6 3"></polygon>
+      </symbol>
+      <symbol id="icon-refresh-cw" viewBox="0 0 24 24">
+        <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"></path>
+        <path d="M3 21v-5h5"></path>
+        <path d="M3 12A9 9 0 0 1 18.5 5.7L21 8"></path>
+        <path d="M21 3v5h-5"></path>
+      </symbol>
+      <symbol id="icon-rotate-cw" viewBox="0 0 24 24">
+        <path d="M21 2v6h-6"></path>
+        <path d="M21 13a9 9 0 1 1-3-6.7L21 8"></path>
+      </symbol>
+      <symbol id="icon-route" viewBox="0 0 24 24">
+        <circle cx="6" cy="19" r="3"></circle>
+        <circle cx="18" cy="5" r="3"></circle>
+        <path d="M12 19h2a4 4 0 0 0 0-8H10a4 4 0 0 1 0-8h2"></path>
+      </symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="8"></circle>
+        <path d="m21 21-4.3-4.3"></path>
+      </symbol>
+      <symbol id="icon-server" viewBox="0 0 24 24">
+        <rect x="2" y="3" width="20" height="8" rx="2"></rect>
+        <rect x="2" y="13" width="20" height="8" rx="2"></rect>
+        <path d="M6 7h.01"></path>
+        <path d="M6 17h.01"></path>
+      </symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+      </symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24">
+        <path d="M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V5l8-3 8 3Z"></path>
+        <path d="m9 12 2 2 4-4"></path>
+      </symbol>
+      <symbol id="icon-square" viewBox="0 0 24 24">
+        <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+      </symbol>
+      <symbol id="icon-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2"></path>
+        <path d="M12 20v2"></path>
+        <path d="m4.93 4.93 1.41 1.41"></path>
+        <path d="m17.66 17.66 1.41 1.41"></path>
+        <path d="M2 12h2"></path>
+        <path d="M20 12h2"></path>
+        <path d="m6.34 17.66-1.41 1.41"></path>
+        <path d="m19.07 4.93-1.41 1.41"></path>
+      </symbol>
+      <symbol id="icon-table" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+        <path d="M3 10h18"></path>
+        <path d="M10 4v16"></path>
+      </symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24">
+        <path d="m4 17 6-6-6-6"></path>
+        <path d="M12 19h8"></path>
+      </symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24">
+        <path d="M3 6h18"></path>
+        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        <path d="M19 6 18 20a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+      </symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18"></path>
+        <path d="m6 6 12 12"></path>
+      </symbol>
+    </svg>
     <div class="admin-shell">
       <aside class="side-rail" aria-label="Admin navigation">
         <header class="brand-block">
           <p class="eyebrow">Process manager</p>
-          <h1>pm2-go</h1>
+          <h1><svg class="brand-icon"><use href="#icon-server"></use></svg>pm2-go</h1>
           <p id="rail-summary" class="muted-line">Waiting for daemon</p>
         </header>
 
         <nav class="rail-nav" aria-label="Sections">
           <button class="rail-link active" type="button" data-view="overview">
-            <span class="rail-mark">01</span>
-            Overview
+            <svg class="icon"><use href="#icon-layout-dashboard"></use></svg>
+            <span>Overview</span>
           </button>
           <button class="rail-link" type="button" data-view="processes">
-            <span class="rail-mark">02</span>
-            Processes
+            <svg class="icon"><use href="#icon-table"></use></svg>
+            <span>Processes</span>
           </button>
           <button class="rail-link" type="button" data-view="logs">
-            <span class="rail-mark">03</span>
-            Logs
+            <svg class="icon"><use href="#icon-terminal"></use></svg>
+            <span>Logs</span>
           </button>
           <button class="rail-link" type="button" data-view="events">
-            <span class="rail-mark">04</span>
-            Events
+            <svg class="icon"><use href="#icon-history"></use></svg>
+            <span>Events</span>
           </button>
           <button class="rail-link" type="button" data-view="settings">
-            <span class="rail-mark">05</span>
-            Settings
+            <svg class="icon"><use href="#icon-settings"></use></svg>
+            <span>Settings</span>
           </button>
         </nav>
 
@@ -49,7 +203,10 @@
         </section>
 
         <form method="post" action="/auth/logout" class="rail-footer">
-          <button class="button ghost-button" type="submit">Sign out</button>
+          <button class="button ghost-button" type="submit">
+            <svg class="icon"><use href="#icon-log-out"></use></svg>
+            <span>Sign out</span>
+          </button>
         </form>
       </aside>
 
@@ -68,8 +225,14 @@
               <span>Auto refresh</span>
             </label>
             <span id="last-updated" class="timestamp">Waiting</span>
-            <button id="refresh" class="button" type="button">Refresh</button>
-            <button id="theme-toggle" class="button icon-button" type="button">Theme</button>
+            <button id="refresh" class="button" type="button">
+              <svg class="icon"><use href="#icon-refresh-cw"></use></svg>
+              <span>Refresh</span>
+            </button>
+            <button id="theme-toggle" class="button icon-button" type="button">
+              <svg class="icon"><use href="#icon-moon"></use></svg>
+              <span>Dark</span>
+            </button>
           </div>
         </header>
 
@@ -78,22 +241,34 @@
         <section id="overview-view" class="view-panel">
           <div class="summary-grid" aria-label="Process summary">
             <button class="summary-card active" type="button" data-filter-shortcut="all">
-              <span class="summary-title">Total</span>
+              <span class="summary-top">
+                <span class="summary-title">Total</span>
+                <span class="summary-icon"><svg class="icon"><use href="#icon-server"></use></svg></span>
+              </span>
               <strong id="total-count">0</strong>
               <small id="total-hint">tracked apps</small>
             </button>
             <button class="summary-card" type="button" data-filter-shortcut="online">
-              <span class="summary-title">Online</span>
+              <span class="summary-top">
+                <span class="summary-title">Online</span>
+                <span class="summary-icon summary-icon-online"><svg class="icon"><use href="#icon-check-circle"></use></svg></span>
+              </span>
               <strong id="online-count">0</strong>
               <small>serving now</small>
             </button>
             <button class="summary-card warning-card" type="button" data-filter-shortcut="unhealthy">
-              <span class="summary-title">Unhealthy</span>
+              <span class="summary-top">
+                <span class="summary-title">Unhealthy</span>
+                <span class="summary-icon summary-icon-warning"><svg class="icon"><use href="#icon-alert-triangle"></use></svg></span>
+              </span>
               <strong id="unhealthy-count">0</strong>
               <small>needs attention</small>
             </button>
             <button class="summary-card danger-card" type="button" data-filter-shortcut="stopped">
-              <span class="summary-title">Stopped</span>
+              <span class="summary-top">
+                <span class="summary-title">Stopped</span>
+                <span class="summary-icon summary-icon-danger"><svg class="icon"><use href="#icon-square"></use></svg></span>
+              </span>
               <strong id="stopped-count">0</strong>
               <small>not running</small>
             </button>
@@ -103,22 +278,22 @@
             <section class="panel hero-panel">
               <div class="panel-header">
                 <div>
-                  <p class="eyebrow">Daemon</p>
+                  <p class="eyebrow"><svg class="icon"><use href="#icon-activity"></use></svg>Daemon</p>
                   <h3 id="daemon-health-title">Connection pending</h3>
                 </div>
                 <span id="daemon-health-pill" class="status-pill">unknown</span>
               </div>
               <div class="hero-stats">
                 <div>
-                  <span class="field-label">Aggregate CPU</span>
+                  <span class="field-label"><svg class="icon"><use href="#icon-cpu"></use></svg>Aggregate CPU</span>
                   <strong id="aggregate-cpu">0.0%</strong>
                 </div>
                 <div>
-                  <span class="field-label">Aggregate memory</span>
+                  <span class="field-label"><svg class="icon"><use href="#icon-database"></use></svg>Aggregate memory</span>
                   <strong id="aggregate-memory">0.0MB</strong>
                 </div>
                 <div>
-                  <span class="field-label">Restarts</span>
+                  <span class="field-label"><svg class="icon"><use href="#icon-rotate-cw"></use></svg>Restarts</span>
                   <strong id="aggregate-restarts">0</strong>
                 </div>
               </div>
@@ -128,10 +303,13 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <p class="eyebrow">Inventory</p>
+                  <p class="eyebrow"><svg class="icon"><use href="#icon-list"></use></svg>Inventory</p>
                   <h3>Priority processes</h3>
                 </div>
-                <button class="small-button" type="button" data-view-jump="processes">Open table</button>
+                <button class="small-button" type="button" data-view-jump="processes">
+                  <svg class="icon"><use href="#icon-table"></use></svg>
+                  <span>Open table</span>
+                </button>
               </div>
               <div id="overview-processes" class="priority-list"></div>
             </section>
@@ -139,10 +317,13 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <p class="eyebrow">Activity</p>
+                  <p class="eyebrow"><svg class="icon"><use href="#icon-history"></use></svg>Activity</p>
                   <h3>Recent events</h3>
                 </div>
-                <button class="small-button" type="button" data-view-jump="events">Full timeline</button>
+                <button class="small-button" type="button" data-view-jump="events">
+                  <svg class="icon"><use href="#icon-history"></use></svg>
+                  <span>Full timeline</span>
+                </button>
               </div>
               <ul id="overview-events" class="event-list compact-events"></ul>
             </section>
@@ -155,7 +336,7 @@
               <div class="panel inventory-panel">
                 <div class="table-toolbar">
                   <div class="search-box">
-                    <span class="search-icon">Search</span>
+                    <span class="search-icon"><svg class="icon"><use href="#icon-search"></use></svg><span>Search</span></span>
                     <input id="search" type="search" placeholder="Name, command, cwd, args">
                   </div>
                   <div class="filter-strip" aria-label="Status filter">
@@ -194,7 +375,7 @@
               <div id="detail-content" class="inspector-content" hidden>
                 <header class="inspector-header">
                   <div>
-                    <p class="eyebrow">Selected process</p>
+                    <p class="eyebrow"><svg class="icon"><use href="#icon-server"></use></svg>Selected process</p>
                     <h3 id="detail-name">Process</h3>
                     <p id="detail-command" class="code-line"></p>
                   </div>
@@ -202,24 +383,39 @@
                 </header>
 
                 <div class="action-strip">
-                  <button class="button action-btn" type="button" data-action="start">Start</button>
-                  <button class="button action-btn" type="button" data-action="restart">Restart</button>
-                  <button class="button action-btn" type="button" data-action="reload">Reload</button>
-                  <button class="button action-btn danger-outline" type="button" data-action="stop">Stop</button>
-                  <button class="button action-btn button-danger" type="button" data-action="delete">Delete</button>
+                  <button class="button action-btn" type="button" data-action="start">
+                    <svg class="icon"><use href="#icon-play"></use></svg>
+                    <span>Start</span>
+                  </button>
+                  <button class="button action-btn" type="button" data-action="restart">
+                    <svg class="icon"><use href="#icon-rotate-cw"></use></svg>
+                    <span>Restart</span>
+                  </button>
+                  <button class="button action-btn" type="button" data-action="reload">
+                    <svg class="icon"><use href="#icon-refresh-cw"></use></svg>
+                    <span>Reload</span>
+                  </button>
+                  <button class="button action-btn danger-outline" type="button" data-action="stop">
+                    <svg class="icon"><use href="#icon-square"></use></svg>
+                    <span>Stop</span>
+                  </button>
+                  <button class="button action-btn button-danger" type="button" data-action="delete">
+                    <svg class="icon"><use href="#icon-trash"></use></svg>
+                    <span>Delete</span>
+                  </button>
                 </div>
 
                 <div class="metric-strip">
                   <div>
-                    <span class="field-label">CPU</span>
+                    <span class="field-label"><svg class="icon"><use href="#icon-cpu"></use></svg>CPU</span>
                     <strong id="selected-cpu">0.0%</strong>
                   </div>
                   <div>
-                    <span class="field-label">Memory</span>
+                    <span class="field-label"><svg class="icon"><use href="#icon-database"></use></svg>Memory</span>
                     <strong id="selected-memory">0.0MB</strong>
                   </div>
                   <div>
-                    <span class="field-label">Uptime</span>
+                    <span class="field-label"><svg class="icon"><use href="#icon-activity"></use></svg>Uptime</span>
                     <strong id="selected-uptime">0s</strong>
                   </div>
                 </div>
@@ -227,7 +423,7 @@
                 <section class="chart-panel">
                   <div class="panel-header tight-header">
                     <div>
-                      <p class="eyebrow">Last hour</p>
+                      <p class="eyebrow"><svg class="icon"><use href="#icon-chart"></use></svg>Last hour</p>
                       <h3>Resource trend</h3>
                     </div>
                     <span id="metric-count" class="compact-pill">0 samples</span>
@@ -245,15 +441,27 @@
                 </section>
 
                 <div class="detail-tabs" role="tablist" aria-label="Process detail tabs">
-                  <button class="detail-tab active" type="button" data-detail-tab="settings">Settings</button>
-                  <button class="detail-tab" type="button" data-detail-tab="env">Env</button>
-                  <button class="detail-tab" type="button" data-detail-tab="paths">Paths</button>
+                  <button class="detail-tab active" type="button" data-detail-tab="settings">
+                    <svg class="icon"><use href="#icon-settings"></use></svg>
+                    <span>Settings</span>
+                  </button>
+                  <button class="detail-tab" type="button" data-detail-tab="env">
+                    <svg class="icon"><use href="#icon-key"></use></svg>
+                    <span>Env</span>
+                  </button>
+                  <button class="detail-tab" type="button" data-detail-tab="paths">
+                    <svg class="icon"><use href="#icon-route"></use></svg>
+                    <span>Paths</span>
+                  </button>
                 </div>
 
                 <section id="settings-tab" class="detail-tab-panel">
                   <div class="section-heading">
                     <h3>Runtime settings</h3>
-                    <button id="copy-config" class="small-button" type="button">Copy JSON</button>
+                    <button id="copy-config" class="small-button" type="button">
+                      <svg class="icon"><use href="#icon-copy"></use></svg>
+                      <span>Copy JSON</span>
+                    </button>
                   </div>
                   <dl id="settings-list" class="settings-list"></dl>
                 </section>
@@ -264,7 +472,7 @@
                     <span id="env-count" class="compact-pill">0 keys</span>
                   </div>
                   <div class="search-box compact-search">
-                    <span class="search-icon">Filter</span>
+                    <span class="search-icon"><svg class="icon"><use href="#icon-search"></use></svg><span>Filter</span></span>
                     <input id="env-search" type="search" placeholder="Environment key">
                   </div>
                   <div id="env-key-list" class="key-grid"></div>
@@ -282,7 +490,7 @@
           <section class="panel logs-panel">
             <div class="panel-header logs-header">
               <div>
-                <p class="eyebrow">Live tail</p>
+                <p class="eyebrow"><svg class="icon"><use href="#icon-terminal"></use></svg>Live tail</p>
                 <h3 id="log-process-name">No process selected</h3>
               </div>
               <div class="log-controls">
@@ -301,8 +509,14 @@
                   <span>Auto-scroll</span>
                 </label>
                 <input id="log-search" type="search" placeholder="Filter logs">
-                <button id="log-copy" class="small-button" type="button">Copy</button>
-                <button id="log-maximize" class="small-button" type="button">Expand</button>
+                <button id="log-copy" class="small-button" type="button">
+                  <svg class="icon"><use href="#icon-copy"></use></svg>
+                  <span>Copy</span>
+                </button>
+                <button id="log-maximize" class="small-button" type="button">
+                  <svg class="icon"><use href="#icon-maximize"></use></svg>
+                  <span>Expand</span>
+                </button>
               </div>
             </div>
             <pre id="log-viewer" class="log-viewer" aria-label="Process logs"></pre>
@@ -312,11 +526,14 @@
         <section id="events-view" class="view-panel" hidden>
           <section class="panel">
             <div class="panel-header">
-              <div>
-                <p class="eyebrow">Audit trail</p>
-                <h3>Control and status events</h3>
-              </div>
-              <button id="events-refresh" class="small-button" type="button">Refresh events</button>
+                <div>
+                  <p class="eyebrow"><svg class="icon"><use href="#icon-history"></use></svg>Audit trail</p>
+                  <h3>Control and status events</h3>
+                </div>
+              <button id="events-refresh" class="small-button" type="button">
+                <svg class="icon"><use href="#icon-refresh-cw"></use></svg>
+                <span>Refresh events</span>
+              </button>
             </div>
             <ul id="event-list" class="event-list timeline-list"></ul>
           </section>
@@ -327,7 +544,7 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <p class="eyebrow">Security</p>
+                  <p class="eyebrow"><svg class="icon"><use href="#icon-shield"></use></svg>Security</p>
                   <h3>Dashboard access</h3>
                 </div>
                 <span id="settings-mode-pill" class="mode-badge">Loading</span>
@@ -338,7 +555,7 @@
             <section class="panel">
               <div class="panel-header">
                 <div>
-                  <p class="eyebrow">Runtime</p>
+                  <p class="eyebrow"><svg class="icon"><use href="#icon-settings"></use></svg>Runtime</p>
                   <h3>Admin posture</h3>
                 </div>
               </div>
@@ -351,12 +568,18 @@
 
     <div id="confirm-modal" class="modal-backdrop" hidden>
       <section class="confirm-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-        <p class="eyebrow">Confirm action</p>
+        <p class="eyebrow"><svg class="icon"><use href="#icon-alert-triangle"></use></svg>Confirm action</p>
         <h2 id="confirm-title">Delete process?</h2>
         <p id="confirm-copy" class="muted-line">This removes the selected process from daemon management.</p>
         <div class="confirm-actions">
-          <button id="confirm-cancel" class="button" type="button">Cancel</button>
-          <button id="confirm-run" class="button button-danger" type="button">Delete</button>
+          <button id="confirm-cancel" class="button" type="button">
+            <svg class="icon"><use href="#icon-x"></use></svg>
+            <span>Cancel</span>
+          </button>
+          <button id="confirm-run" class="button button-danger" type="button">
+            <svg class="icon"><use href="#icon-trash"></use></svg>
+            <span>Delete</span>
+          </button>
         </div>
       </section>
     </div>
@@ -365,10 +588,13 @@
       <section class="modal-panel logs-modal-panel" role="dialog" aria-modal="true" aria-label="Expanded logs">
         <header class="modal-header">
           <div>
-            <p class="eyebrow">Expanded logs</p>
+            <p class="eyebrow"><svg class="icon"><use href="#icon-maximize"></use></svg>Expanded logs</p>
             <h3 class="modal-title-text">Terminal log viewer</h3>
           </div>
-          <button id="close-logs-modal" class="button" type="button">Close</button>
+          <button id="close-logs-modal" class="button" type="button">
+            <svg class="icon"><use href="#icon-x"></use></svg>
+            <span>Close</span>
+          </button>
         </header>
         <pre id="modal-log-viewer" class="log-viewer modal-log-viewer" aria-label="Expanded logs"></pre>
       </section>
