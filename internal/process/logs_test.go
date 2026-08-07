@@ -427,6 +427,56 @@ func TestRotateLogFileWaitsForPathLock(t *testing.T) {
 	}
 }
 
+func TestFlushLogFileTruncatesAndBumpsGeneration(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	if err := os.WriteFile(logPath, []byte("before\n"), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	if err := FlushLogFile(logPath); err != nil {
+		t.Fatalf("flush log: %v", err)
+	}
+
+	contents, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read flushed log: %v", err)
+	}
+	if len(contents) != 0 {
+		t.Fatalf("expected flushed log to be empty, got %q", string(contents))
+	}
+	if generation := logstore.ReadCursorGeneration(logPath); generation == "" {
+		t.Fatal("expected cursor generation to be bumped")
+	}
+}
+
+func TestFlushLogFileWaitsForActiveWriterLock(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	logFile := openManagedTestLogFile(t, logPath)
+	logFile.writeEntry(logstore.Entry{Stream: logstore.StdoutStream, Line: "before"})
+
+	logFile.mu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		done <- FlushLogFile(logPath)
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("expected flush to wait for active writer lock, got err=%v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	logFile.mu.Unlock()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("flush after unlock: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for flush after writer unlock")
+	}
+}
+
 func TestLogFilePathLocksAreReclaimedAfterUse(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	unlock := lockLogFilePath(logPath)

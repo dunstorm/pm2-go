@@ -5,7 +5,7 @@ package cli
 
 import (
 	"github.com/dunstorm/pm2-go/internal/logstore"
-	"github.com/dunstorm/pm2-go/internal/utils"
+	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/spf13/cobra"
 )
@@ -22,12 +22,9 @@ var flushCmd = &cobra.Command{
 
 		flushLogFile := func(logFilePath string) {
 			logger.Info().Msg(logFilePath)
-			if err := utils.RemoveFileContents(logFilePath); err != nil {
+			if err := processrunner.FlushLogFile(logFilePath); err != nil {
 				logger.Error().Msgf("Error while flushing log file %s: %s", logFilePath, err)
 				return
-			}
-			if err := logstore.BumpCursorGeneration(logFilePath); err != nil {
-				logger.Error().Msgf("Error while updating log cursor for %s: %s", logFilePath, err)
 			}
 		}
 

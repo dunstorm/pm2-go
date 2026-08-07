@@ -129,6 +129,30 @@ func RotateLogFile(filename, rotatedFilename string) (bool, error) {
 	return rotateInactiveLogFile(filename, rotatedFilename)
 }
 
+func FlushLogFile(filename string) error {
+	if filename == "" {
+		return nil
+	}
+
+	unlock := lockLogFilePath(filename)
+	defer unlock()
+
+	files := activeManagedLogFileList(filename)
+	for _, logFile := range files {
+		logFile.mu.Lock()
+	}
+	defer func() {
+		for i := len(files) - 1; i >= 0; i-- {
+			files[i].mu.Unlock()
+		}
+	}()
+
+	if err := os.Truncate(filename, 0); err != nil {
+		return err
+	}
+	return logstore.BumpCursorGeneration(filename)
+}
+
 func activeManagedLogFileList(filename string) []*managedLogFile {
 	value, ok := activeLogFiles.Load(filename)
 	if !ok {
