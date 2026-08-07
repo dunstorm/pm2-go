@@ -20,16 +20,22 @@ var flushCmd = &cobra.Command{
 
 		logger := master.GetLogger()
 
+		flushLogFile := func(logFilePath string) {
+			logger.Info().Msg(logFilePath)
+			if err := utils.RemoveFileContents(logFilePath); err != nil {
+				logger.Error().Msgf("Error while flushing log file %s: %s", logFilePath, err)
+				return
+			}
+			if err := logstore.BumpCursorGeneration(logFilePath); err != nil {
+				logger.Error().Msgf("Error while updating log cursor for %s: %s", logFilePath, err)
+			}
+		}
+
 		flushProcess := func(process *pb.Process) {
 			combinedLogPath := logstore.CombinedPath(process.LogFilePath)
-			logger.Info().Msg(process.LogFilePath)
-			logger.Info().Msg(process.ErrFilePath)
-			logger.Info().Msg(combinedLogPath)
-
-			// remove file contents
-			utils.RemoveFileContents(process.LogFilePath)
-			utils.RemoveFileContents(process.ErrFilePath)
-			utils.RemoveFileContents(combinedLogPath)
+			flushLogFile(process.LogFilePath)
+			flushLogFile(process.ErrFilePath)
+			flushLogFile(combinedLogPath)
 		}
 
 		if len(args) == 0 || args[0] == "all" {
@@ -64,17 +70,8 @@ var flushCmd = &cobra.Command{
 			return
 		}
 
-		// logs
-		combinedLogPath := logstore.CombinedPath(process.LogFilePath)
 		logger.Info().Msg("Flushing:")
-		logger.Info().Msg(process.LogFilePath)
-		logger.Info().Msg(process.ErrFilePath)
-		logger.Info().Msg(combinedLogPath)
-
-		// remove file contents
-		utils.RemoveFileContents(process.LogFilePath)
-		utils.RemoveFileContents(process.ErrFilePath)
-		utils.RemoveFileContents(combinedLogPath)
+		flushProcess(process)
 
 		logger.Info().Msg("Logs flushed")
 	},

@@ -36,7 +36,7 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 		return logResponse{}, errors.New("log path is a directory")
 	}
 	size := info.Size()
-	currentFileID := logFileID(info)
+	currentFileID := logFileID(filePath, info)
 	if fileID != "" && fileID != currentFileID {
 		offset = 0
 	}
@@ -98,11 +98,16 @@ func readCombinedLog(filePath string, offset int64, fileID string, tailLines int
 	return logs, nil
 }
 
-func logFileID(info os.FileInfo) string {
+func logFileID(filePath string, info os.FileInfo) string {
+	generation := logstore.ReadCursorGeneration(filePath)
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		return fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
+		fileID := fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
+		if generation != "" {
+			return fileID + ":" + generation
+		}
+		return fileID
 	}
-	return ""
+	return generation
 }
 
 func splitLogLines(contents string) []string {

@@ -339,11 +339,12 @@ func startScheduler(handler *Handler) {
 				handler.logger.Info().Msgf("Rotated combined log file %s to %s", group.combinedLogPath, rotatedCombinedPath)
 			}
 
-			if rotateFailed || !rotatedAny {
+			if !rotatedAny {
 				return
 			}
 
-			// if no error, increase logfilecount
+			// Advance the archive index once any file rotated so a partial
+			// failure cannot reuse and overwrite a captured archive.
 			nextLogFileCount := logFileCount + 1
 			handler.mu.Lock()
 			for _, process := range group.processes {
@@ -352,6 +353,9 @@ func startScheduler(handler *Handler) {
 				}
 			}
 			handler.mu.Unlock()
+			if rotateFailed {
+				return
+			}
 
 			// if LogFileCount exceeds LogRotateCount, delete oldest log file
 			if nextLogFileCount >= int32(config.LogRotateMaxFiles) {

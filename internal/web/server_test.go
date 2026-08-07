@@ -350,6 +350,42 @@ func TestReadLogResetsOffsetWhenFileChanges(t *testing.T) {
 	}
 }
 
+func TestReadLogResetsOffsetWhenCursorGenerationChanges(t *testing.T) {
+	dir := t.TempDir()
+	logFile := dir + "/flushed.log"
+	if err := os.WriteFile(logFile, []byte("first\n"), 0600); err != nil {
+		t.Fatalf("write original log: %v", err)
+	}
+
+	first, err := readLog(logFile, 0, "", 10)
+	if err != nil {
+		t.Fatalf("read original log: %v", err)
+	}
+	if err := os.Truncate(logFile, 0); err != nil {
+		t.Fatalf("truncate log: %v", err)
+	}
+	if err := logstore.BumpCursorGeneration(logFile); err != nil {
+		t.Fatalf("bump cursor generation: %v", err)
+	}
+	if err := os.WriteFile(logFile, []byte("second\nthird\n"), 0600); err != nil {
+		t.Fatalf("write regrown log: %v", err)
+	}
+
+	logs, err := readLog(logFile, first.Offset, first.FileID, 10)
+	if err != nil {
+		t.Fatalf("read regenerated log: %v", err)
+	}
+	if logs.FileID == first.FileID {
+		t.Fatal("expected cursor generation change to alter file id")
+	}
+	if logs.Offset != int64(len("second\nthird\n")) {
+		t.Fatalf("expected regenerated offset, got %d", logs.Offset)
+	}
+	if strings.Join(logs.Lines, ",") != "second,third" {
+		t.Fatalf("expected regenerated lines, got %#v", logs.Lines)
+	}
+}
+
 func TestProcessCombinedLogs(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/api-out.log"

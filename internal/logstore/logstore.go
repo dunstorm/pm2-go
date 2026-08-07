@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -16,6 +17,8 @@ const (
 	StdoutStream = "stdout"
 	StderrStream = "stderr"
 )
+
+var cursorGenerationCounter atomic.Int64
 
 type Entry struct {
 	Timestamp string `json:"timestamp"`
@@ -46,6 +49,36 @@ func CombinedPath(stdoutLogPath string) string {
 		base += "-combined.jsonl"
 	}
 	return filepath.Join(dir, base)
+}
+
+func CursorGenerationPath(logPath string) string {
+	if logPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(logPath), "."+filepath.Base(logPath)+".cursor")
+}
+
+func ReadCursorGeneration(logPath string) string {
+	path := CursorGenerationPath(logPath)
+	if path == "" {
+		return ""
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(contents))
+}
+
+func BumpCursorGeneration(logPath string) error {
+	path := CursorGenerationPath(logPath)
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d:%d\n", time.Now().UnixNano(), cursorGenerationCounter.Add(1))), 0600)
 }
 
 func ParseLine(line string) (Entry, error) {
