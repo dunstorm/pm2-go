@@ -54,7 +54,7 @@ func (c *Client) FindProcess(name string) *pb.Process {
 
 // stop process
 func (c *Client) StopProcess(index int32) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	conn, manager := c.Dial()
 	defer conn.Close()

@@ -15,6 +15,7 @@ const state = {
   logOffsets: { out: 0, err: 0, both: 0 },
   logFileIds: { out: "", err: "", both: "" },
   logLines: { out: [], err: [], both: [] },
+  logFallbackActive: false,
   logLive: true,
   logQuery: "",
   pendingAction: "",
@@ -402,10 +403,12 @@ async function loadBothStreams(request, reset) {
   try {
     const data = await fetchLogStream(request.processId, "both", 360);
     if (!isCurrentLogRequest(request)) return;
+    const wasFallbackActive = state.logFallbackActive;
     const rotated = updateLogCursor("both", data);
     state.logOffsets.both = data.offset || 0;
+    state.logFallbackActive = false;
     const incoming = Array.isArray(data.lines) ? data.lines : [];
-    if (reset || rotated) {
+    if (reset || rotated || wasFallbackActive) {
       state.logLines.both = incoming;
     } else if (incoming.length > 0) {
       state.logLines.both = state.logLines.both.concat(incoming).slice(-1200);
@@ -421,6 +424,9 @@ async function loadBothStreams(request, reset) {
   ]);
   if (!isCurrentLogRequest(request)) return;
   const incoming = [];
+  state.logFallbackActive = true;
+  state.logOffsets.both = 0;
+  state.logFileIds.both = "";
 
   if (outResult.status === "fulfilled") {
     const rotated = updateLogCursor("out", outResult.value);
@@ -1019,6 +1025,7 @@ function resetLogs(render = true) {
   state.logOffsets = { out: 0, err: 0, both: 0 };
   state.logFileIds = { out: "", err: "", both: "" };
   state.logLines = { out: [], err: [], both: [] };
+  state.logFallbackActive = false;
   if (render) renderLogs();
 }
 
