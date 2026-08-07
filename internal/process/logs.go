@@ -14,6 +14,12 @@ import (
 
 const defaultLogTimestampFormat = "2006-01-02 15:04:05"
 
+const (
+	logReadBufferSize       = 32 * 1024
+	maxLogDrainLinesPerPass = 1024
+	maxStreamLogBufferBytes = 1024 * 1024
+)
+
 type combinedLogSink struct {
 	file    *os.File
 	entries chan logstore.Entry
@@ -70,11 +76,19 @@ func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFi
 		_ = unix.SetNonblock(int(stream.reader.Fd()), true)
 	}
 
-	buffer := make([]byte, 32*1024)
+	buffer := make([]byte, logReadBufferSize)
 	active := len(streams)
 	next := 0
 	for active > 0 {
 		progressed := false
+
+		if drainBufferedLines(streams, sink, &next, maxLogDrainLinesPerPass) > 0 {
+			continue
+		}
+		if flushOversizedBuffers(streams, sink) {
+			continue
+		}
+
 		pollFDs := make([]unix.PollFd, 0, active)
 		pollStreams := make([]*processLogStream, 0, active)
 
@@ -89,11 +103,7 @@ func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFi
 			pollStreams = append(pollStreams, stream)
 		}
 
-		timeout := 10
-		if hasAnyBufferedLine(streams) {
-			timeout = 0
-		}
-		_, err := unix.Poll(pollFDs, timeout)
+		_, err := unix.Poll(pollFDs, 10)
 		if err != nil && err != unix.EINTR {
 			for _, stream := range pollStreams {
 				stream.close(sink)
@@ -128,49 +138,49 @@ func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFi
 			}
 		}
 
-		for i := 0; i < len(streams); i++ {
-			index := (next + i) % len(streams)
-			stream := streams[index]
-			if stream.closed || !stream.hasBufferedLine() {
-				continue
-			}
-			stream.emitBufferedLine(sink)
-			for !hasOtherBufferedLine(streams, index) && stream.emitBufferedLine(sink) {
-			}
-			progressed = true
-			next = (index + 1) % len(streams)
-			break
-		}
-
 		if !progressed {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
 
-func hasAnyBufferedLine(streams []*processLogStream) bool {
-	for _, stream := range streams {
-		if !stream.closed && stream.hasBufferedLine() {
-			return true
-		}
-	}
-	return false
-}
-
-func hasOtherBufferedLine(streams []*processLogStream, current int) bool {
-	for index, stream := range streams {
-		if index == current || stream.closed {
-			continue
-		}
-		if stream.hasBufferedLine() {
-			return true
-		}
-	}
-	return false
-}
-
 func (stream *processLogStream) hasBufferedLine() bool {
 	return bytes.IndexByte(stream.buffer, '\n') >= 0
+}
+
+func drainBufferedLines(streams []*processLogStream, sink *combinedLogSink, next *int, limit int) int {
+	drained := 0
+	for drained < limit {
+		emitted := false
+		for i := 0; i < len(streams); i++ {
+			index := (*next + i) % len(streams)
+			stream := streams[index]
+			if stream.closed || !stream.hasBufferedLine() {
+				continue
+			}
+			stream.emitBufferedLine(sink)
+			*next = (index + 1) % len(streams)
+			drained++
+			emitted = true
+			break
+		}
+		if !emitted {
+			break
+		}
+	}
+	return drained
+}
+
+func flushOversizedBuffers(streams []*processLogStream, sink *combinedLogSink) bool {
+	flushed := false
+	for _, stream := range streams {
+		if stream.closed || len(stream.buffer) <= maxStreamLogBufferBytes {
+			continue
+		}
+		stream.emitBufferedChunk(maxStreamLogBufferBytes, sink)
+		flushed = true
+	}
+	return flushed
 }
 
 func (stream *processLogStream) emitBufferedLine(sink *combinedLogSink) bool {
@@ -182,6 +192,15 @@ func (stream *processLogStream) emitBufferedLine(sink *combinedLogSink) bool {
 	stream.buffer = stream.buffer[index+1:]
 	stream.writeLine(strings.TrimSuffix(line, "\r"), sink)
 	return true
+}
+
+func (stream *processLogStream) emitBufferedChunk(size int, sink *combinedLogSink) {
+	if size > len(stream.buffer) {
+		size = len(stream.buffer)
+	}
+	line := string(stream.buffer[:size])
+	stream.buffer = stream.buffer[size:]
+	stream.writeLine(strings.TrimSuffix(line, "\r"), sink)
 }
 
 func (stream *processLogStream) close(sink *combinedLogSink) {

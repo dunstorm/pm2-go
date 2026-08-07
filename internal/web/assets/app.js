@@ -20,6 +20,8 @@ const state = {
   pendingProcessId: null,
   toastTimer: null,
   chartTimer: null,
+  detailRequestSeq: 0,
+  logRequestSeq: 0,
 };
 
 const viewMeta = {
@@ -147,6 +149,7 @@ function bindEvents() {
   });
   els.logStream.addEventListener("change", () => {
     state.logStream = els.logStream.value;
+    state.logRequestSeq += 1;
     loadLogs(true);
   });
   els.logLive.addEventListener("change", () => {
@@ -243,7 +246,7 @@ async function loadSession() {
 
 async function refreshAll() {
   await loadProcesses();
-  if (state.selectedId !== null) {
+  if (isProcessId(state.selectedId)) {
     await loadSelectedDetails();
   }
 }
@@ -255,12 +258,16 @@ async function loadProcesses() {
     state.processes = Array.isArray(data.processes) ? data.processes : [];
     state.events = Array.isArray(data.events) ? data.events : state.events;
 
-    if (state.selectedId === null && state.processes.length > 0) {
+    if (!isProcessId(state.selectedId) && state.processes.length > 0) {
       state.selectedId = state.processes[0].id;
+      state.detailRequestSeq += 1;
+      state.logRequestSeq += 1;
     }
-    if (state.selectedId !== null && !state.processes.some((process) => process.id === state.selectedId)) {
+    if (isProcessId(state.selectedId) && !state.processes.some((process) => process.id === state.selectedId)) {
       state.selectedId = state.processes[0]?.id ?? null;
       state.selectedProcess = null;
+      state.detailRequestSeq += 1;
+      state.logRequestSeq += 1;
       resetLogs();
     }
 
@@ -270,27 +277,33 @@ async function loadProcesses() {
     state.processes = [];
     state.selectedId = null;
     state.selectedProcess = null;
+    state.detailRequestSeq += 1;
+    state.logRequestSeq += 1;
     setError(error.message);
     renderAll();
   }
 }
 
 async function loadSelectedDetails() {
-  if (state.selectedId === null) {
+  if (!isProcessId(state.selectedId)) {
     state.selectedProcess = null;
     state.metrics = [];
     renderSelectedProcess();
     renderLogs();
     return;
   }
+  const requestedId = state.selectedId;
+  const requestSeq = ++state.detailRequestSeq;
   try {
-    const data = await fetchJSON(`/api/processes/${state.selectedId}`);
+    const data = await fetchJSON(`/api/processes/${requestedId}`);
+    if (!isCurrentDetailRequest(requestedId, requestSeq)) return;
     state.selectedProcess = data.process;
     state.metrics = Array.isArray(data.metrics) ? data.metrics : [];
     renderSelectedProcess();
     renderCharts();
-    await loadLogs(false);
+    await loadLogs(false, requestedId);
   } catch (error) {
+    if (!isCurrentDetailRequest(requestedId, requestSeq)) return;
     setError(error.message);
   }
 }
@@ -305,29 +318,32 @@ async function loadEvents() {
   }
 }
 
-async function loadLogs(reset) {
-  if (state.selectedId === null) {
+async function loadLogs(reset, processId = state.selectedId, stream = state.logStream) {
+  if (!isProcessId(processId) || state.selectedId !== processId) {
     renderLogs();
     return;
   }
+  const request = { processId, stream, seq: ++state.logRequestSeq };
   if (reset) resetLogs(false);
 
   try {
-    if (state.logStream === "both") {
-      await loadBothStreams(reset);
+    if (stream === "both") {
+      await loadBothStreams(request, reset);
     } else {
-      await loadOneStream(state.logStream, reset);
+      await loadOneStream(request, reset);
     }
   } catch (error) {
-    const stream = state.logStream;
+    if (!isCurrentLogRequest(request)) return;
     state.logLines[stream] = [`Failed to read logs: ${error.message}`];
   }
+  if (!isCurrentLogRequest(request)) return;
   renderLogs();
 }
 
-async function loadBothStreams(reset) {
+async function loadBothStreams(request, reset) {
   try {
-    const data = await fetchLogStream("both", 360);
+    const data = await fetchLogStream(request.processId, "both", 360);
+    if (!isCurrentLogRequest(request)) return;
     state.logOffsets.both = data.offset || 0;
     const incoming = Array.isArray(data.lines) ? data.lines : [];
     if (reset) {
@@ -337,12 +353,14 @@ async function loadBothStreams(reset) {
     }
     return;
   } catch (_error) {
+    if (!isCurrentLogRequest(request)) return;
   }
 
   const [outResult, errResult] = await Promise.allSettled([
-    fetchLogStream("out", 180),
-    fetchLogStream("err", 180),
+    fetchLogStream(request.processId, "out", 180),
+    fetchLogStream(request.processId, "err", 180),
   ]);
+  if (!isCurrentLogRequest(request)) return;
   const incoming = [];
 
   if (outResult.status === "fulfilled") {
@@ -366,8 +384,10 @@ async function loadBothStreams(reset) {
   }
 }
 
-async function loadOneStream(stream, reset) {
-  const data = await fetchLogStream(stream, 360);
+async function loadOneStream(request, reset) {
+  const stream = request.stream;
+  const data = await fetchLogStream(request.processId, stream, 360);
+  if (!isCurrentLogRequest(request)) return;
   state.logOffsets[stream] = data.offset || 0;
   const incoming = Array.isArray(data.lines) ? data.lines : [];
   if (reset) {
@@ -377,13 +397,23 @@ async function loadOneStream(stream, reset) {
   }
 }
 
-function fetchLogStream(stream, tail) {
+function fetchLogStream(processId, stream, tail) {
   const params = new URLSearchParams({
     stream,
     offset: String(state.logOffsets[stream] || 0),
     tail: String(tail),
   });
-  return fetchJSON(`/api/processes/${state.selectedId}/logs?${params}`);
+  return fetchJSON(`/api/processes/${processId}/logs?${params}`);
+}
+
+function isCurrentDetailRequest(processId, seq) {
+  return state.selectedId === processId && state.detailRequestSeq === seq;
+}
+
+function isCurrentLogRequest(request) {
+  return state.selectedId === request.processId
+    && state.logStream === request.stream
+    && state.logRequestSeq === request.seq;
 }
 
 function renderAll() {
@@ -577,6 +607,7 @@ function setFilter(filter, jumpToProcesses) {
 }
 
 async function selectProcess(id, view) {
+  if (!isProcessId(id)) return;
   if (view) switchView(view);
   if (state.selectedId !== id) {
     state.selectedId = id;
@@ -584,6 +615,8 @@ async function selectProcess(id, view) {
     state.metrics = [];
     state.envQuery = "";
     els.envSearch.value = "";
+    state.detailRequestSeq += 1;
+    state.logRequestSeq += 1;
     resetLogs(false);
   }
   renderProcessInventory();
@@ -607,7 +640,7 @@ function renderProcessSelect() {
     option.textContent = process.name || `process-${process.id}`;
     els.processSelect.append(option);
   });
-  if (state.selectedId !== null) {
+  if (isProcessId(state.selectedId)) {
     els.processSelect.value = String(state.selectedId);
   }
 }
@@ -922,7 +955,14 @@ function runAction(action, id = state.selectedId) {
     showToast("Dashboard is read-only.");
     return;
   }
-  state.selectedId = id;
+  if (state.selectedId !== id) {
+    state.selectedId = id;
+    state.selectedProcess = null;
+    state.metrics = [];
+    state.detailRequestSeq += 1;
+    state.logRequestSeq += 1;
+    resetLogs(false);
+  }
   const process = state.processes.find((item) => item.id === id) || currentProcessDetail();
   if (action === "delete" || action === "stop") {
     openConfirm(action, id, process);
@@ -1255,7 +1295,7 @@ async function bootstrap() {
     if (els.autoRefresh.checked) refreshAll();
   }, 1000);
   window.setInterval(() => {
-    if (state.logLive && state.selectedId !== null) loadLogs(false);
+    if (state.logLive && isProcessId(state.selectedId)) loadLogs(false);
   }, 2000);
 }
 
