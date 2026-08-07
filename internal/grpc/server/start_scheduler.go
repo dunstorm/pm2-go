@@ -126,8 +126,9 @@ func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.C
 	nextLogFileCount := logFileCount + 1
 	handler.mu.Lock()
 	for _, process := range group.processes {
-		if handler.databaseById[process.Id] == process {
-			process.LogFileCount = nextLogFileCount
+		current := handler.databaseById[process.Id]
+		if current != nil && processUsesLogRotationGroup(current, group) && current.LogFileCount < nextLogFileCount {
+			current.LogFileCount = nextLogFileCount
 		}
 	}
 	handler.mu.Unlock()
@@ -145,6 +146,12 @@ func normalizedLogRotateMaxFiles(config utils.Config) int32 {
 		return 1
 	}
 	return int32(config.LogRotateMaxFiles)
+}
+
+func processUsesLogRotationGroup(process *pb.Process, group *logRotationGroup) bool {
+	return process.LogFilePath == group.logFilePath &&
+		process.ErrFilePath == group.errFilePath &&
+		logstore.CombinedPath(process.LogFilePath) == group.combinedLogPath
 }
 
 func pruneLogArchives(handler *Handler, paths []string, index int32) {

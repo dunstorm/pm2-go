@@ -148,6 +148,57 @@ func TestHandleMaxLogGroupKeepsCountMonotonicAfterPrune(t *testing.T) {
 	}
 }
 
+func TestHandleMaxLogGroupAdvancesReplacementWithSameLogPaths(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	errPath := filepath.Join(dir, "api-err.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	if err := os.WriteFile(outPath, []byte("large enough"), 0640); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	staleProcess := &pb.Process{
+		Id:           1,
+		LogFilePath:  outPath,
+		ErrFilePath:  errPath,
+		LogFileCount: 3,
+	}
+	replacement := &pb.Process{
+		Id:           staleProcess.Id,
+		LogFilePath:  outPath,
+		ErrFilePath:  errPath,
+		LogFileCount: staleProcess.LogFileCount,
+	}
+	logger := zerolog.New(io.Discard)
+	handler := &Handler{
+		logger:       &logger,
+		databaseById: map[int32]*pb.Process{replacement.Id: replacement},
+	}
+
+	previousRotateLogFile := rotateLogFile
+	rotateLogFile = func(string, string) (bool, error) {
+		return true, nil
+	}
+	t.Cleanup(func() {
+		rotateLogFile = previousRotateLogFile
+	})
+
+	handleMaxLogGroup(handler, &logRotationGroup{
+		logFilePath:     outPath,
+		errFilePath:     errPath,
+		combinedLogPath: combinedPath,
+		processes:       []*pb.Process{staleProcess},
+	}, utils.Config{
+		LogRotate:         true,
+		LogRotateSize:     1,
+		LogRotateMaxFiles: 10,
+	})
+
+	if replacement.LogFileCount != 4 {
+		t.Fatalf("expected replacement log file count to advance, got %d", replacement.LogFileCount)
+	}
+}
+
 func TestHandleMaxLogGroupPrunesArchivesAfterPartialFailure(t *testing.T) {
 	dir := t.TempDir()
 	outPath := filepath.Join(dir, "api-out.log")

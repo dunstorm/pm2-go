@@ -80,7 +80,7 @@ func (c *Client) ListProcess() []*pb.Process {
 
 // restart process inside server
 func (c *Client) RestartProcess(request *pb.RestartProcessRequest) *pb.Process {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	conn, manager := c.Dial()
 	defer conn.Close()

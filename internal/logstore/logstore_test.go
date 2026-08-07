@@ -194,6 +194,36 @@ func TestReadEntriesWithCursorReturnsSnapshotIdentity(t *testing.T) {
 	}
 }
 
+func TestBumpCursorGenerationAtomicallyReplacesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "api-combined.jsonl")
+	if err := os.WriteFile(filePath, nil, 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	generationPath := CursorGenerationPath(filePath)
+	if err := os.WriteFile(generationPath, []byte("old-generation\n"), 0600); err != nil {
+		t.Fatalf("write old generation: %v", err)
+	}
+
+	if err := BumpCursorGeneration(filePath); err != nil {
+		t.Fatalf("bump cursor generation: %v", err)
+	}
+
+	generation := ReadCursorGeneration(filePath)
+	if generation == "" || generation == "old-generation" {
+		t.Fatalf("expected new non-empty generation, got %q", generation)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read generation dir: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("expected no cursor generation temp files, found %s", entry.Name())
+		}
+	}
+}
+
 func TestReadLinesWithCursorRetriesWhenGenerationChangesAroundSnapshot(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	oldContents := `{"stream":"stdout","line":"old"}` + "\n"
