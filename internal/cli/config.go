@@ -67,7 +67,7 @@ var configSetCmd = &cobra.Command{
 			logger.Info().Msgf("LogRotate has been set to %v", config.LogRotate)
 		case "logrotate_max_files":
 			maxFiles := utils.ParseInt(args[1])
-			if maxFiles < 0 {
+			if maxFiles <= 0 {
 				logger.Error().Msg("logrotate_max_files must be a positive integer")
 				return
 			}

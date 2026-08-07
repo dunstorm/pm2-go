@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in - pm2-go Web</title>
+    <link rel="icon" href="/assets/favicon.svg">
+    <link rel="stylesheet" href="/assets/app.css">
+  </head>
+  <body class="login-body">
+    <main class="login-shell">
+      <section class="login-panel">
+        <p class="eyebrow">pm2-go</p>
+        <h1>Sign in</h1>
+        <form method="post" action="/auth/login" class="login-form">
+          <label>
+            <span>Access token</span>
+            <input name="token" type="password" autocomplete="current-password" autofocus required>
+          </label>
+          <button class="button button-primary" type="submit">Continue</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

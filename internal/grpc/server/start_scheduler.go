@@ -2,10 +2,13 @@ package server
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
@@ -17,6 +20,239 @@ func updateProcessMap(handler *Handler, processId int32, p *os.Process) {
 }
 
 const metricsRefreshInterval = 2 * time.Second
+
+var rotateLogFile = processrunner.RotateLogFile
+var waitForLiveRestartProcessExit = waitForTrackedProcessExit
+
+type logRotationKey struct {
+	logFilePath     string
+	errFilePath     string
+	combinedLogPath string
+}
+
+type logRotationGroup struct {
+	logFilePath     string
+	errFilePath     string
+	combinedLogPath string
+	processes       []*pb.Process
+}
+
+func buildLogRotationGroups(processes []*pb.Process) []*logRotationGroup {
+	groupsByKey := make(map[logRotationKey]*logRotationGroup)
+	groups := make([]*logRotationGroup, 0, len(processes))
+	for _, process := range processes {
+		if process == nil {
+			continue
+		}
+
+		combinedLogPath := logstore.CombinedPath(process.LogFilePath)
+		key := logRotationKey{
+			logFilePath:     process.LogFilePath,
+			errFilePath:     process.ErrFilePath,
+			combinedLogPath: combinedLogPath,
+		}
+		group, ok := groupsByKey[key]
+		if !ok {
+			group = &logRotationGroup{
+				logFilePath:     process.LogFilePath,
+				errFilePath:     process.ErrFilePath,
+				combinedLogPath: combinedLogPath,
+			}
+			groupsByKey[key] = group
+			groups = append(groups, group)
+		}
+		group.processes = append(group.processes, process)
+	}
+	return groups
+}
+
+func maxLogFileCount(processes []*pb.Process) int32 {
+	var logFileCount int32
+	for _, process := range processes {
+		if process != nil && process.LogFileCount > logFileCount {
+			logFileCount = process.LogFileCount
+		}
+	}
+	return logFileCount
+}
+
+func handleMaxLogGroup(handler *Handler, group *logRotationGroup, config utils.Config) {
+	// if LogFilePath exceeds LogRotateSize, rotate files and add logfilecount
+	plainLogFileSize := utils.FileSize(group.logFilePath) + utils.FileSize(group.errFilePath)
+	if !config.LogRotate || plainLogFileSize <= int64(config.LogRotateSize) {
+		return
+	}
+
+	handler.mu.Lock()
+	logFileCount := maxLogFileCount(group.processes)
+	handler.mu.Unlock()
+	logFileCount = maxInt32(logFileCount, nextLogArchiveIndex([]string{group.logFilePath, group.errFilePath, group.combinedLogPath}))
+
+	rotatedAny := false
+
+	rotatedLogPath := group.logFilePath + "." + strconv.Itoa(int(logFileCount))
+	rotated, err := rotateLogFile(group.logFilePath, rotatedLogPath)
+	if rotated {
+		rotatedAny = true
+		handler.logger.Info().Msgf("Rotated log file %s to %s", group.logFilePath, rotatedLogPath)
+	}
+	if err != nil {
+		handler.logger.Error().Msgf("Error while rotating log file %s: %s", group.logFilePath, err)
+	}
+
+	// do the same for error log file
+	rotatedErrPath := group.errFilePath + "." + strconv.Itoa(int(logFileCount))
+	rotated, err = rotateLogFile(group.errFilePath, rotatedErrPath)
+	if rotated {
+		rotatedAny = true
+		handler.logger.Info().Msgf("Rotated err file %s to %s", group.errFilePath, rotatedErrPath)
+	}
+	if err != nil {
+		handler.logger.Error().Msgf("Error while rotating log file %s: %s", group.errFilePath, err)
+	}
+
+	rotatedCombinedPath := group.combinedLogPath + "." + strconv.Itoa(int(logFileCount))
+	rotated, err = rotateLogFile(group.combinedLogPath, rotatedCombinedPath)
+	if rotated {
+		rotatedAny = true
+		handler.logger.Info().Msgf("Rotated combined log file %s to %s", group.combinedLogPath, rotatedCombinedPath)
+	}
+	if err != nil {
+		handler.logger.Error().Msgf("Error while rotating log file %s: %s", group.combinedLogPath, err)
+	}
+
+	if !rotatedAny {
+		return
+	}
+
+	// Advance the archive index once any file rotated so a partial
+	// failure cannot reuse and overwrite a captured archive.
+	nextLogFileCount := logFileCount + 1
+	handler.mu.Lock()
+	for _, process := range group.processes {
+		current := handler.databaseById[process.Id]
+		if current != nil && processUsesLogRotationGroup(current, group) && current.LogFileCount < nextLogFileCount {
+			current.LogFileCount = nextLogFileCount
+		}
+	}
+	handler.mu.Unlock()
+
+	// if LogFileCount exceeds LogRotateCount, delete oldest log file
+	maxLogFiles := normalizedLogRotateMaxFiles(config)
+	if nextLogFileCount >= maxLogFiles {
+		oldestLogFileIndex := nextLogFileCount - maxLogFiles
+		pruneLogArchives(handler, []string{group.logFilePath, group.errFilePath, group.combinedLogPath}, oldestLogFileIndex)
+	}
+}
+
+func normalizedLogRotateMaxFiles(config utils.Config) int32 {
+	if config.LogRotateMaxFiles <= 0 {
+		return 1
+	}
+	return int32(config.LogRotateMaxFiles)
+}
+
+func nextLogArchiveIndex(paths []string) int32 {
+	seen := make(map[string]bool, len(paths))
+	var nextIndex int32
+	for _, path := range paths {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		highestIndex := highestLogArchiveIndex(path)
+		if highestIndex >= nextIndex {
+			nextIndex = highestIndex + 1
+		}
+	}
+	return nextIndex
+}
+
+func highestLogArchiveIndex(path string) int32 {
+	dir := filepath.Dir(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return -1
+	}
+
+	var highestIndex int32 = -1
+	for _, entry := range entries {
+		index, ok := logArchiveIndex(path, entry.Name())
+		if !ok {
+			continue
+		}
+		if index > highestIndex {
+			highestIndex = index
+		}
+	}
+	return highestIndex
+}
+
+func logArchiveIndex(path, name string) (int32, bool) {
+	suffix, ok := strings.CutPrefix(name, filepath.Base(path)+".")
+	if !ok || suffix == "" {
+		return 0, false
+	}
+	index, err := strconv.ParseInt(suffix, 10, 32)
+	if err != nil || index < 0 {
+		return 0, false
+	}
+	return int32(index), true
+}
+
+func maxInt32(left, right int32) int32 {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func processUsesLogRotationGroup(process *pb.Process, group *logRotationGroup) bool {
+	return process.LogFilePath == group.logFilePath &&
+		process.ErrFilePath == group.errFilePath &&
+		logstore.CombinedPath(process.LogFilePath) == group.combinedLogPath
+}
+
+func pruneLogArchives(handler *Handler, paths []string, index int32) {
+	seen := make(map[string]bool, len(paths))
+	seenArchives := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+
+		for _, archivePath := range logArchivePathsThroughIndex(path, index) {
+			if seenArchives[archivePath] {
+				continue
+			}
+			seenArchives[archivePath] = true
+			if err := os.Remove(archivePath); err != nil {
+				handler.logger.Error().Msgf("Error while deleting log file %s: %s", archivePath, err)
+				continue
+			}
+			handler.logger.Info().Msgf("Deleted log file %s", archivePath)
+		}
+	}
+}
+
+func logArchivePathsThroughIndex(path string, maxIndex int32) []string {
+	dir := filepath.Dir(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []string{path + "." + strconv.Itoa(int(maxIndex))}
+	}
+
+	archivePaths := make([]string, 0)
+	for _, entry := range entries {
+		index, ok := logArchiveIndex(path, entry.Name())
+		if !ok || index > maxIndex {
+			continue
+		}
+		archivePaths = append(archivePaths, filepath.Join(dir, entry.Name()))
+	}
+	return archivePaths
+}
 
 func processMetricsDue(handler *Handler, processId int32) bool {
 	handler.mu.Lock()
@@ -48,6 +284,10 @@ func refreshProcessMetrics(handler *Handler, p *pb.Process, force bool) (int64, 
 }
 
 func restartProcess(handler *Handler, p *pb.Process) {
+	if handler.databaseById[p.Id] != p {
+		return
+	}
+
 	handler.logger.Info().Msgf("Restarting process %s", p.Name)
 	p.IncreaseRestarts()
 	p.RestartAt = nil
@@ -95,11 +335,14 @@ func restartProcess(handler *Handler, p *pb.Process) {
 
 	p.InitUptime()
 	p.InitStartedAt()
-
-	go process.Wait()
 }
 
 func restartLiveProcess(handler *Handler, p *pb.Process) {
+	if handler.databaseById[p.Id] != p || p.GetStopSignal() {
+		return
+	}
+
+	pid := p.Pid
 	found := handler.processes[p.Id]
 	if found == nil && p.Pid != 0 {
 		if process, running := utils.GetProcess(p.Pid); running {
@@ -107,8 +350,16 @@ func restartLiveProcess(handler *Handler, p *pb.Process) {
 		}
 	}
 	if found != nil {
+		handler.mu.Unlock()
 		if err := utils.KillProcessGroup(found); err != nil {
 			handler.logger.Warn().Err(err).Msgf("Failed to stop process %s before restart", p.Name)
+		}
+		if pid > 0 {
+			waitForLiveRestartProcessExit(pid, 2*time.Second)
+		}
+		handler.mu.Lock()
+		if handler.databaseById[p.Id] != p || p.GetStopSignal() {
+			return
 		}
 	}
 
@@ -243,49 +494,9 @@ func startScheduler(handler *Handler) {
 	config := utils.GetConfig()
 
 	// handle max log file, max log size
-	handleMaxLog := func(p *pb.Process) {
+	handleMaxLog := func(group *logRotationGroup) {
 		defer wg.Done()
-		// if LogFilePath exceeds LogRotateSize, rename file and add logfilecount
-		combinedLogFilePath := utils.FileSize(p.LogFilePath) + utils.FileSize(p.ErrFilePath)
-		if config.LogRotate && combinedLogFilePath > int64(config.LogRotateSize) {
-			err := utils.RenameFile(p.LogFilePath, p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
-			// if error rename file
-			if err != nil {
-				handler.logger.Error().Msgf("Error while renaming log file %s: %s", p.LogFilePath, err)
-			}
-			handler.logger.Info().Msgf("Renamed log file %s to %s", p.LogFilePath, p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
-
-			// do the same for error log file
-			err = utils.RenameFile(p.ErrFilePath, p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
-			// if error rename file
-			if err != nil {
-				handler.logger.Error().Msgf("Error while renaming log file %s: %s", p.ErrFilePath, err)
-			}
-			handler.logger.Info().Msgf("Renamed err file %s to %s", p.ErrFilePath, p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount)))
-
-			// if no error, increase logfilecount
-			p.LogFileCount++
-
-			// if LogFileCount exceeds LogRotateCount, delete oldest log file
-			if p.LogFileCount >= int32(config.LogRotateMaxFiles) {
-				// delete oldest log & err file
-				err = os.Remove(p.LogFilePath + "." + strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
-				if err != nil {
-					handler.logger.Error().Msgf("Error while deleting log file %s: %s", p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))), err)
-				}
-				handler.logger.Info().Msgf("Deleted log file %s", p.LogFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
-
-				err = os.Remove(p.ErrFilePath + "." + strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
-				if err != nil {
-					handler.logger.Error().Msgf("Error while deleting log file %s: %s", p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))), err)
-				}
-				handler.logger.Info().Msgf("Deleted err file %s", p.ErrFilePath+"."+strconv.Itoa(int(p.LogFileCount-int32(config.LogRotateMaxFiles))))
-
-				// decrease logfilecount
-				p.LogFileCount = int32(config.LogRotateMaxFiles)
-			}
-		}
-
+		handleMaxLogGroup(handler, group, config)
 	}
 
 	go func() {
@@ -295,15 +506,18 @@ func startScheduler(handler *Handler) {
 			for _, p := range handler.databaseById {
 				processes = append(processes, p)
 			}
+			logRotationGroups := buildLogRotationGroups(processes)
 			handler.mu.Unlock()
 
 			for _, p := range processes {
 				wg.Add(1)
 				go syncProcess(p)
+			}
 
-				if config.LogRotate {
+			if config.LogRotate {
+				for _, group := range logRotationGroups {
 					wg.Add(1)
-					go handleMaxLog(p)
+					go handleMaxLog(group)
 				}
 			}
 			wg.Wait()

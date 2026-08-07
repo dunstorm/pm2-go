@@ -7,12 +7,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/rs/zerolog"
 )
+
+var logCaptureDrainTimeout = 2 * time.Second
+var spawnedProcessWaitRetention = 30 * time.Second
+var spawnedProcessWaits sync.Map
 
 type SpawnParams struct {
 	Name                     string            `json:"name"`
@@ -35,13 +42,15 @@ type SpawnParams struct {
 	WatchIntervalMS          int32             `json:"watch_interval"`
 	Logger                   *zerolog.Logger
 
-	PidPilePath string `json:"-"`
-	LogFilePath string `json:"-"`
-	ErrFilePath string `json:"-"`
+	PidPilePath         string `json:"-"`
+	LogFilePath         string `json:"-"`
+	ErrFilePath         string `json:"-"`
+	CombinedLogFilePath string `json:"-"`
 
-	logFile  *os.File
-	errFile  *os.File
-	nullFile *os.File
+	logFile      *managedLogFile
+	errFile      *managedLogFile
+	combinedFile *managedLogFile
+	nullFile     *os.File
 }
 
 func (params *SpawnParams) fillDefaults() error {
@@ -65,6 +74,7 @@ func (params *SpawnParams) fillDefaults() error {
 	params.PidPilePath = filepath.Join(utils.GetMainDirectory(), "pids", fmt.Sprintf("%s.pid", fileName))
 	params.LogFilePath = filepath.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-out.log", fileName))
 	params.ErrFilePath = filepath.Join(utils.GetMainDirectory(), "logs", fmt.Sprintf("%s-err.log", fileName))
+	params.CombinedLogFilePath = logstore.CombinedPath(params.LogFilePath)
 
 	return nil
 }
@@ -127,16 +137,92 @@ func commandEnvironment(base []string, overrides map[string]string, pythonExecut
 
 func (params *SpawnParams) createFiles() error {
 	var err error
-	if params.logFile, err = os.OpenFile(params.LogFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+	params.logFile, err = openManagedLogFile(params.LogFilePath)
+	if err != nil {
 		return err
 	}
-	if params.errFile, err = os.OpenFile(params.ErrFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640); err != nil {
+
+	params.errFile, err = openManagedLogFile(params.ErrFilePath)
+	if err != nil {
+		params.closeFiles()
+		return err
+	}
+
+	params.combinedFile, err = openManagedLogFile(params.CombinedLogFilePath)
+	if err != nil {
+		params.closeFiles()
 		return err
 	}
 	if params.nullFile, err = os.Open(os.DevNull); err != nil {
+		params.closeFiles()
 		return err
 	}
 	return nil
+}
+
+func (params *SpawnParams) closeFiles() {
+	for _, file := range []*managedLogFile{params.logFile, params.errFile, params.combinedFile} {
+		file.close()
+	}
+	if params.nullFile != nil {
+		_ = params.nullFile.Close()
+	}
+}
+
+func waitForLogCapture(logsWG *sync.WaitGroup, readers ...*os.File) {
+	done := make(chan struct{})
+	go func() {
+		logsWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return
+	case <-time.After(logCaptureDrainTimeout):
+		for _, reader := range readers {
+			if reader != nil {
+				_ = reader.Close()
+			}
+		}
+		<-done
+	}
+}
+
+func WaitForSpawnedProcess(pid int32, timeout time.Duration) (bool, bool) {
+	value, ok := spawnedProcessWaits.Load(pid)
+	if !ok {
+		return false, false
+	}
+
+	done, ok := value.(chan struct{})
+	if !ok {
+		return false, false
+	}
+
+	if timeout <= 0 {
+		select {
+		case <-done:
+			deleteSpawnedProcessWait(pid, done)
+			return true, true
+		default:
+			return false, true
+		}
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		deleteSpawnedProcessWait(pid, done)
+		return true, true
+	case <-timer.C:
+		return false, true
+	}
+}
+
+func deleteSpawnedProcessWait(pid int32, waitDone chan struct{}) {
+	spawnedProcessWaits.CompareAndDelete(pid, waitDone)
 }
 
 func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
@@ -151,23 +237,40 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	var err error
 	params.ExecutablePath, err = exec.LookPath(params.ExecutablePath)
 	if err != nil {
+		params.closeFiles()
 		return nil, err
 	}
 
 	stdoutReader, stdoutWriter, err := createPipe()
 	if err != nil {
+		params.closeFiles()
 		return nil, err
 	}
 	stderrReader, stderrWriter, err := createPipe()
 	if err != nil {
+		_ = stdoutReader.Close()
+		_ = stdoutWriter.Close()
+		params.closeFiles()
 		return nil, err
 	}
 
-	stdoutTimestampWriter := newTimestampWriter(params.logFile, "")
-	stderrTimestampWriter := newTimestampWriter(params.errFile, "")
+	combinedSink := newCombinedLogSink(params.combinedFile)
+	var logsWG sync.WaitGroup
+	logsWG.Add(1)
+	go func() {
+		defer logsWG.Done()
+		defer stdoutReader.Close()
+		defer stderrReader.Close()
+		processStreamLogs(stdoutReader, stderrReader, params.logFile, params.errFile, combinedSink)
+	}()
 
-	go stdoutTimestampWriter.processLogs(stdoutReader)
-	go stderrTimestampWriter.processLogs(stderrReader)
+	closeLogCapture := func() {
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+		waitForLogCapture(&logsWG, stdoutReader, stderrReader)
+		combinedSink.close()
+		params.closeFiles()
+	}
 
 	cmd := exec.Command(params.ExecutablePath, params.Args...)
 	cmd.Dir = params.Cwd
@@ -180,22 +283,20 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	}
 
 	if err := cmd.Start(); err != nil {
-		stdoutWriter.Close()
-		stderrWriter.Close()
-		params.nullFile.Close()
-		params.logFile.Close()
-		params.errFile.Close()
+		closeLogCapture()
 		return nil, err
 	}
 
+	pid := int32(cmd.Process.Pid)
+	waitDone := make(chan struct{})
+	spawnedProcessWaits.Store(pid, waitDone)
 	go func() {
-		cmd.Wait()
-
-		stdoutWriter.Close()
-		stderrWriter.Close()
-		params.nullFile.Close()
-		params.logFile.Close()
-		params.errFile.Close()
+		_ = cmd.Wait()
+		close(waitDone)
+		time.AfterFunc(spawnedProcessWaitRetention, func() {
+			deleteSpawnedProcessWait(pid, waitDone)
+		})
+		closeLogCapture()
 	}()
 
 	params.Logger.Info().Msgf("[%s] ✓", params.Name)
@@ -209,7 +310,7 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	rpcProcess := &pb.Process{
 		Name:                     params.Name,
 		ExecutablePath:           params.ExecutablePath,
-		Pid:                      int32(cmd.Process.Pid),
+		Pid:                      pid,
 		Args:                     params.Args,
 		Cwd:                      params.Cwd,
 		LogFilePath:              params.LogFilePath,

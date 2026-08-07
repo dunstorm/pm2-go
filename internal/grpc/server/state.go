@@ -31,6 +31,7 @@ type persistedProcess struct {
 	Watch                    bool              `json:"watch,omitempty"`
 	WatchPaths               []string          `json:"watch_paths,omitempty"`
 	WatchIntervalMS          int32             `json:"watch_interval,omitempty"`
+	LogFileCount             int32             `json:"log_file_count,omitempty"`
 }
 
 func (api *Handler) restoreState() {
@@ -55,8 +56,26 @@ func (api *Handler) restoreState() {
 		}
 		if resp == nil || !resp.Success {
 			api.logger.Error().Str("name", savedProcess.Name).Msg("Failed to restore process")
+			continue
 		}
+		api.restorePersistedProcessState(savedProcess)
 	}
+}
+
+func (api *Handler) restorePersistedProcessState(savedProcess persistedProcess) {
+	if savedProcess.LogFileCount <= 0 {
+		return
+	}
+
+	api.mu.Lock()
+	defer api.mu.Unlock()
+
+	process := api.databaseByName[savedProcess.Name]
+	if process == nil || process.LogFileCount >= savedProcess.LogFileCount {
+		return
+	}
+	process.LogFileCount = savedProcess.LogFileCount
+	api.persistStateLocked()
 }
 
 func (api *Handler) persistStateLocked() {
@@ -115,6 +134,7 @@ func newPersistedProcess(process *pb.Process) persistedProcess {
 		Watch:                    process.Watch,
 		WatchPaths:               process.WatchPaths,
 		WatchIntervalMS:          process.WatchIntervalMs,
+		LogFileCount:             process.LogFileCount,
 	}
 }
 

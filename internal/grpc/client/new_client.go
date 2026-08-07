@@ -54,7 +54,7 @@ func (c *Client) FindProcess(name string) *pb.Process {
 
 // stop process
 func (c *Client) StopProcess(index int32) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	conn, manager := c.Dial()
 	defer conn.Close()
@@ -80,7 +80,7 @@ func (c *Client) ListProcess() []*pb.Process {
 
 // restart process inside server
 func (c *Client) RestartProcess(request *pb.RestartProcessRequest) *pb.Process {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	conn, manager := c.Dial()
 	defer conn.Close()
@@ -102,6 +102,18 @@ func (c *Client) DeleteProcess(id int32) bool {
 		c.logger.Fatal().Msgf("%s", err.Error())
 	}
 	return r.GetSuccess()
+}
+
+func (c *Client) FlushProcess(id int32) *pb.FlushProcessResponse {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, manager := c.Dial()
+	defer conn.Close()
+	r, err := (*manager).FlushProcess(ctx, &pb.FlushProcessRequest{Id: id})
+	if err != nil {
+		c.logger.Fatal().Msgf("%s", err.Error())
+	}
+	return r
 }
 
 // spawn process inside server

@@ -118,6 +118,10 @@ func (app *App) DeleteProcess(process *pb.Process) bool {
 	return app.client.DeleteProcess(process.Id)
 }
 
+func (app *App) FlushProcess(process *pb.Process) *pb.FlushProcessResponse {
+	return app.client.FlushProcess(process.Id)
+}
+
 func (app *App) SpawnProcess(params SpawnParams) bool {
 	resp := app.client.SpawnProcess(&pb.SpawnProcessRequest{
 		Name:                     params.Name,

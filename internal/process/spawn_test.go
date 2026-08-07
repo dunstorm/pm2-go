@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	"github.com/rs/zerolog"
 )
@@ -31,6 +33,79 @@ func TestSpawnNewProcess(t *testing.T) {
 		t.Fatal("process is not running")
 	}
 	processFound.Kill()
+}
+
+func TestWaitForSpawnedProcessTracksCmdWait(t *testing.T) {
+	zerolog.SetGlobalLevel(zerolog.Disabled)
+	t.Setenv("HOME", t.TempDir())
+
+	spawnedProcess, err := SpawnNewProcess(SpawnParams{
+		Name:           "wait-tracked",
+		ExecutablePath: "python3",
+		Args:           []string{"-c", "import time; time.sleep(30)"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if exited, tracked := WaitForSpawnedProcess(spawnedProcess.Pid, 10*time.Millisecond); !tracked || exited {
+		t.Fatalf("expected running process to be tracked without exiting, tracked=%v exited=%v", tracked, exited)
+	}
+
+	processFound, running := utils.IsProcessRunning(spawnedProcess.Pid)
+	if !running {
+		t.Fatal("process is not running")
+	}
+	if err := utils.KillProcessGroup(processFound); err != nil {
+		t.Fatalf("kill process group: %v", err)
+	}
+	if exited, tracked := WaitForSpawnedProcess(spawnedProcess.Pid, 2*time.Second); !tracked || !exited {
+		t.Fatalf("expected tracked process exit, tracked=%v exited=%v", tracked, exited)
+	}
+}
+
+func TestDeleteSpawnedProcessWaitKeepsReusedPIDRegistration(t *testing.T) {
+	const pid int32 = -4242
+	oldDone := make(chan struct{})
+	newDone := make(chan struct{})
+	spawnedProcessWaits.Store(pid, oldDone)
+	spawnedProcessWaits.Store(pid, newDone)
+	t.Cleanup(func() {
+		spawnedProcessWaits.Delete(pid)
+	})
+
+	deleteSpawnedProcessWait(pid, oldDone)
+
+	value, ok := spawnedProcessWaits.Load(pid)
+	if !ok {
+		t.Fatal("expected reused PID registration to remain")
+	}
+	if value != newDone {
+		t.Fatal("expected stale wait channel not to delete reused registration")
+	}
+
+	deleteSpawnedProcessWait(pid, newDone)
+	if _, ok := spawnedProcessWaits.Load(pid); ok {
+		t.Fatal("expected matching wait channel to be deleted")
+	}
+}
+
+func TestWaitForSpawnedProcessClaimsClosedRegistration(t *testing.T) {
+	const pid int32 = -4343
+	done := make(chan struct{})
+	spawnedProcessWaits.Store(pid, done)
+	t.Cleanup(func() {
+		spawnedProcessWaits.Delete(pid)
+	})
+	close(done)
+
+	exited, tracked := WaitForSpawnedProcess(pid, 0)
+	if !tracked || !exited {
+		t.Fatalf("expected closed registration to be tracked and exited, tracked=%v exited=%v", tracked, exited)
+	}
+	if _, ok := spawnedProcessWaits.Load(pid); ok {
+		t.Fatal("expected closed registration to be deleted after waiter claims it")
+	}
 }
 
 func TestSpawnNewProcessReturnsPidFileError(t *testing.T) {
@@ -80,6 +155,11 @@ func TestFillDefaultsUsesExecutableBaseNameForAbsolutePath(t *testing.T) {
 	expectedLogFile := filepath.Join(home, ".pm2-go", "logs", "python-out.log")
 	if params.LogFilePath != expectedLogFile {
 		t.Fatalf("expected log file %q, got %q", expectedLogFile, params.LogFilePath)
+	}
+
+	expectedCombinedLogFile := logstore.CombinedPath(expectedLogFile)
+	if params.CombinedLogFilePath != expectedCombinedLogFile {
+		t.Fatalf("expected combined log file %q, got %q", expectedCombinedLogFile, params.CombinedLogFilePath)
 	}
 }
 

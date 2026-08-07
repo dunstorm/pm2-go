@@ -4,7 +4,6 @@ Copyright © 2022 NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/spf13/cobra"
 )
@@ -20,12 +19,13 @@ var flushCmd = &cobra.Command{
 		logger := master.GetLogger()
 
 		flushProcess := func(process *pb.Process) {
-			logger.Info().Msg(process.LogFilePath)
-			logger.Info().Msg(process.ErrFilePath)
-
-			// remove file contents
-			utils.RemoveFileContents(process.LogFilePath)
-			utils.RemoveFileContents(process.ErrFilePath)
+			response := master.FlushProcess(process)
+			for _, logFilePath := range response.GetLogFilePaths() {
+				logger.Info().Msg(logFilePath)
+			}
+			if !response.GetSuccess() {
+				logger.Error().Msgf("Error while flushing logs for %s", process.Name)
+			}
 		}
 
 		if len(args) == 0 || args[0] == "all" {
@@ -60,14 +60,8 @@ var flushCmd = &cobra.Command{
 			return
 		}
 
-		// logs
 		logger.Info().Msg("Flushing:")
-		logger.Info().Msg(process.LogFilePath)
-		logger.Info().Msg(process.ErrFilePath)
-
-		// remove file contents
-		utils.RemoveFileContents(process.LogFilePath)
-		utils.RemoveFileContents(process.ErrFilePath)
+		flushProcess(process)
 
 		logger.Info().Msg("Logs flushed")
 	},

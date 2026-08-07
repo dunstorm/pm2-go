@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_HOME="$(mktemp -d)"
 BIN="$TMP_HOME/bin/pm2-go"
 E2E_SLOW="${E2E_SLOW:-0}"
+WEB_PID=""
 
 log() {
 	printf '== %s ==\n' "$*" >&2
@@ -103,6 +104,31 @@ assert_file_not_empty() {
 	[[ -f "$file" ]] || fail "expected file to exist: $file"
 	size="$(wc -c <"$file" | tr -d '[:space:]')"
 	[[ "$size" != "0" ]] || fail "expected $file to contain data"
+}
+
+wait_for_file_size_stable() {
+	local file="$1"
+	local timeout="${2:-30}"
+	local previous=""
+	local current
+	local stable_count=0
+
+	[[ -f "$file" ]] || fail "expected file to exist: $file"
+	for _ in $(seq 1 "$timeout"); do
+		current="$(wc -c <"$file" | tr -d '[:space:]')"
+		if [[ "$current" == "$previous" ]]; then
+			stable_count=$((stable_count + 1))
+			if [[ "$stable_count" -ge 3 ]]; then
+				return
+			fi
+		else
+			stable_count=0
+			previous="$current"
+		fi
+		sleep 0.1
+	done
+
+	fail "timed out waiting for $file size to stabilize"
 }
 
 assert_file_not_contains() {
@@ -212,6 +238,123 @@ wait_for_pid_exit() {
 	fail "timed out waiting for pid $pid to exit"
 }
 
+free_port() {
+	python3 - <<'PY'
+import socket
+
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+}
+
+wait_for_web() {
+	local port="$1"
+
+	for _ in $(seq 1 30); do
+		if python3 - "$port" <<'PY' >/dev/null 2>&1
+import http.client
+import sys
+
+conn = http.client.HTTPConnection("127.0.0.1", int(sys.argv[1]), timeout=1)
+conn.request("GET", "/login")
+resp = conn.getresponse()
+sys.exit(0 if resp.status == 200 else 1)
+PY
+		then
+			return
+		fi
+		sleep 0.2
+	done
+
+	fail "timed out waiting for web dashboard on port $port"
+}
+
+web_process_json() {
+	local port="$1"
+
+	python3 - "$port" <<'PY'
+from http.cookies import SimpleCookie
+import http.client
+import json
+import sys
+import urllib.parse
+
+port = int(sys.argv[1])
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("GET", "/api/processes")
+resp = conn.getresponse()
+if resp.status != 401:
+    raise SystemExit(f"expected unauthenticated API to return 401, got {resp.status}")
+resp.read()
+conn.close()
+
+body = urllib.parse.urlencode({"token": "web-e2e-token"})
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("POST", "/auth/login", body, {"Content-Type": "application/x-www-form-urlencoded"})
+resp = conn.getresponse()
+cookies = SimpleCookie()
+for header, value in resp.getheaders():
+    if header.lower() == "set-cookie":
+        cookies.load(value)
+if resp.status != 303 or "pm2_go_web_session" not in cookies or "pm2_go_web_csrf" not in cookies:
+    raise SystemExit(f"expected login redirect with cookie, got {resp.status}")
+resp.read()
+conn.close()
+
+cookie = "; ".join(f"{morsel.key}={morsel.value}" for morsel in cookies.values())
+csrf = cookies["pm2_go_web_csrf"].value
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("GET", "/api/processes", headers={"Cookie": cookie})
+resp = conn.getresponse()
+payload = resp.read().decode()
+if resp.status != 200:
+    raise SystemExit(f"expected authenticated API to return 200, got {resp.status}: {payload}")
+data = json.loads(payload)
+if not data.get("processes"):
+    raise SystemExit("expected at least one process")
+process = data["processes"][0]
+process_id = process["id"]
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("GET", f"/api/processes/{process_id}/metrics", headers={"Cookie": cookie})
+resp = conn.getresponse()
+metrics_payload = resp.read().decode()
+if resp.status != 200 or "points" not in metrics_payload:
+    raise SystemExit(f"expected metrics response, got {resp.status}: {metrics_payload}")
+conn.close()
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request("GET", f"/api/processes/{process_id}/logs?stream=out&tail=5", headers={"Cookie": cookie})
+resp = conn.getresponse()
+logs_payload = resp.read().decode()
+if resp.status != 200 or "lines" not in logs_payload:
+    raise SystemExit(f"expected logs response, got {resp.status}: {logs_payload}")
+conn.close()
+
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+conn.request(
+    "POST",
+    f"/api/processes/{process_id}/actions",
+    json.dumps({"action": "restart"}),
+    {
+        "Content-Type": "application/json",
+        "Cookie": cookie,
+        "X-CSRF-Token": csrf,
+    },
+)
+resp = conn.getresponse()
+action_payload = resp.read().decode()
+if resp.status != 200 or '"success":true' not in action_payload:
+    raise SystemExit(f"expected restart action success, got {resp.status}: {action_payload}")
+conn.close()
+
+print(json.dumps(data, sort_keys=True))
+PY
+}
+
 capture_logs_for() {
 	local name="$1"
 	local output_file="$TMP_HOME/logs-$name.out"
@@ -266,6 +409,20 @@ write_delayed_restart_ecosystem() {
     "cwd": ".",
     "executable_path": "python3",
     "restart_delay": 2000
+  }
+]
+JSON
+}
+
+write_mixed_logs_ecosystem() {
+	cat >"$TMP_HOME/mixed-logs.json" <<'JSON'
+[
+  {
+    "name": "mixed-logs-test",
+    "args": ["-c", "import sys, time; print('mixed-out-1', flush=True); time.sleep(0.2); print('mixed-err-1', file=sys.stderr, flush=True); time.sleep(0.2); print('mixed-out-2', flush=True); time.sleep(0.2)"],
+    "autorestart": false,
+    "cwd": ".",
+    "executable_path": "python3"
   }
 ]
 JSON
@@ -373,6 +530,10 @@ JSON
 
 cleanup() {
 	set +e
+	if [[ -n "$WEB_PID" ]]; then
+		kill "$WEB_PID" >/dev/null 2>&1 || true
+		wait "$WEB_PID" >/dev/null 2>&1 || true
+	fi
 	if [[ -x "$BIN" ]]; then
 		HOME="$TMP_HOME" "$BIN" delete all >/dev/null 2>&1
 		HOME="$TMP_HOME" "$BIN" kill >/dev/null 2>&1
@@ -410,6 +571,20 @@ ecosystem_ls="$(wait_for_ls_contains "python-test" "online")"
 assert_line_count "$ecosystem_ls" "python-test" 1
 assert_parent_is_daemon "$ecosystem_ls" "python-test"
 
+log "web dashboard"
+web_port="$(free_port)"
+web_log="$TMP_HOME/web.log"
+PM2_GO_WEB_TOKEN=web-e2e-token HOME="$TMP_HOME" "$BIN" web --port "$web_port" >"$web_log" 2>&1 &
+WEB_PID=$!
+wait_for_web "$web_port"
+web_json="$(web_process_json "$web_port")"
+assert_contains "$web_json" '"name": "python-test"'
+assert_contains "$web_json" '"status": "online"'
+assert_not_contains "$web_json" '"env"'
+kill "$WEB_PID" >/dev/null 2>&1 || true
+wait "$WEB_PID" >/dev/null 2>&1 || true
+WEB_PID=""
+
 log "status after daemon start"
 status_output="$(capture_pm2 status)"
 assert_contains "$status_output" "PM2 Daemon Running"
@@ -425,6 +600,8 @@ config_output="$(capture_pm2 config set logrotate true)"
 assert_contains "$config_output" "LogRotate has been set to true"
 config_output="$(capture_pm2 config set logrotate_max_files 3)"
 assert_contains "$config_output" "LogRotateMaxFiles has been set to 3"
+config_output="$(capture_pm2 config set logrotate_max_files 0)"
+assert_contains "$config_output" "logrotate_max_files must be a positive integer"
 config_output="$(capture_pm2 config set logrotate_size 1M)"
 assert_contains "$config_output" "LogRotateSize has been set to 1048576 bytes"
 config_output="$(run_pm2 config)"
@@ -455,6 +632,37 @@ assert_contains "$logs_output" "[TAILING]"
 assert_contains "$logs_output" "python-test"
 assert_contains "$logs_output" "0"
 
+log "mixed combined logs"
+write_mixed_logs_ecosystem
+run_pm2 start "$TMP_HOME/mixed-logs.json" >/dev/null
+combined_log="$TMP_HOME/.pm2-go/logs/mixed-logs-test-combined.jsonl"
+wait_for_file_contains "$combined_log" "mixed-out-2" 10
+python3 - "$combined_log" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    entries = [json.loads(line) for line in handle if line.strip()]
+
+observed = {(entry["stream"], entry["line"]) for entry in entries}
+expected = {
+    ("stdout", "mixed-out-1"),
+    ("stderr", "mixed-err-1"),
+    ("stdout", "mixed-out-2"),
+}
+missing = expected - observed
+if missing:
+    raise SystemExit(f"missing mixed combined log entries {missing}, got {observed}")
+PY
+mixed_logs_output="$(capture_logs_for mixed-logs-test)"
+assert_contains "$mixed_logs_output" "[stdout]"
+assert_contains "$mixed_logs_output" "[stderr]"
+assert_contains "$mixed_logs_output" "mixed-out-1"
+assert_contains "$mixed_logs_output" "mixed-err-1"
+delete_mixed_logs_output="$(capture_pm2 delete mixed-logs-test)"
+assert_contains "$delete_mixed_logs_output" "mixed-logs-test"
+
 log "restart process by name"
 restart_output="$(run_pm2 restart python-test)"
 assert_contains "$restart_output" "python-test"
@@ -476,6 +684,7 @@ assert_contains "$stop_all_output" "stopped"
 
 log "flush logs"
 assert_file_not_empty "$stdout_log"
+wait_for_file_size_stable "$stdout_log"
 flush_output="$(capture_pm2 flush python-test)"
 assert_contains "$flush_output" "Logs flushed"
 assert_file_empty "$stdout_log"

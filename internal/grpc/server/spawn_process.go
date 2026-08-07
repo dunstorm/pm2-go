@@ -90,8 +90,6 @@ func (api *Handler) SpawnProcess(ctx context.Context, in *pb.SpawnProcessRequest
 	api.nextId++
 	api.persistStateLocked()
 
-	go osProcess.Wait()
-
 	return &pb.SpawnProcessResponse{
 		Success: true,
 	}, nil

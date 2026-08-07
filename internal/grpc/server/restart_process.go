@@ -19,6 +19,9 @@ import (
 
 const defaultReloadKillTimeout = 1600 * time.Millisecond
 
+var waitForRestartProcessExit = waitForTrackedProcessExit
+var stopProcessForRestartFunc = stopProcessForRestart
+
 func reloadSignal(name string) (os.Signal, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(name))
 	if normalized == "" {
@@ -63,7 +66,11 @@ func waitForProcessExit(pid int32, timeout time.Duration) bool {
 
 func stopProcessForRestart(found *os.Process, pid int32, in *pb.RestartProcessRequest) error {
 	if !in.Graceful {
-		return utils.KillProcessGroup(found)
+		err := utils.KillProcessGroup(found)
+		if pid > 0 {
+			waitForRestartProcessExit(pid, 2*time.Second)
+		}
+		return err
 	}
 
 	signal, err := reloadSignal(in.Signal)
@@ -78,21 +85,22 @@ func stopProcessForRestart(found *os.Process, pid int32, in *pb.RestartProcessRe
 	if in.KillTimeoutMs > 0 {
 		timeout = time.Duration(in.KillTimeoutMs) * time.Millisecond
 	}
-	if waitForProcessExit(pid, timeout) {
+	if waitForRestartProcessExit(pid, timeout) {
 		return nil
 	}
 	return utils.KillProcessGroup(found)
 }
 
+func restoreProcessRuntimeState(process, previous *pb.Process) {
+	process.Pid = previous.Pid
+	process.ProcStatus = cloneProcess(previous).ProcStatus
+	process.StopSignal = previous.StopSignal
+	process.AutoRestart = previous.AutoRestart
+	process.RestartAt = previous.RestartAt
+	process.NextStartAt = previous.NextStartAt
+}
+
 func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessRequest) (*pb.Process, error) {
-	api.mu.Lock()
-	defer api.mu.Unlock()
-
-	currentProcess := api.databaseById[in.Id]
-	if currentProcess == nil {
-		return nil, status.Error(400, "failed to find process")
-	}
-
 	var nextStartAt *timestamppb.Timestamp
 	if in.CronRestart != "" {
 		expr, err := cronexpr.Parse(in.CronRestart)
@@ -102,17 +110,60 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		nextStartAt = timestamppb.New(expr.Next(time.Now()))
 	}
 
-	if found := api.processes[in.Id]; found != nil {
-		pid := currentProcess.Pid
-		if err := stopProcessForRestart(found, pid, in); err != nil {
-			return nil, err
+	api.mu.Lock()
+	currentProcess := api.databaseById[in.Id]
+	if currentProcess == nil {
+		api.mu.Unlock()
+		return nil, status.Error(400, "failed to find process")
+	}
+
+	operationGeneration, ok := api.beginOperationLocked(in.Id)
+	if !ok {
+		api.mu.Unlock()
+		return nil, status.Error(409, "process operation in progress")
+	}
+
+	found := api.processes[in.Id]
+	previousProcess := cloneProcess(currentProcess)
+	pid := int32(0)
+	if found != nil {
+		if in.Graceful {
+			if _, err := reloadSignal(in.Signal); err != nil {
+				api.finishOperationLocked(in.Id)
+				api.mu.Unlock()
+				return nil, err
+			}
 		}
+		pid = currentProcess.Pid
 		currentProcess.SetStatus("stopped")
 		currentProcess.ResetCPUMemory()
 		currentProcess.StopSignal = true
 		currentProcess.ResetPid()
 		updateProcessMap(api, in.Id, nil)
 		delete(api.metricsUpdatedAt, in.Id)
+		api.persistStateLocked()
+	}
+	api.mu.Unlock()
+
+	if found != nil {
+		if err := stopProcessForRestartFunc(found, pid, in); err != nil {
+			api.mu.Lock()
+			if api.databaseById[in.Id] == currentProcess && api.operationGenerationLocked(in.Id) == operationGeneration {
+				restoreProcessRuntimeState(currentProcess, previousProcess)
+				updateProcessMap(api, in.Id, found)
+				api.persistStateLocked()
+			}
+			api.finishOperationLocked(in.Id)
+			api.mu.Unlock()
+			return nil, err
+		}
+	}
+
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	if api.databaseById[in.Id] != currentProcess || api.operationGenerationLocked(in.Id) != operationGeneration {
+		api.finishOperationLocked(in.Id)
+		return nil, status.Error(409, "process changed during restart")
 	}
 
 	newProcess, err := processrunner.SpawnNewProcess(processrunner.SpawnParams{
@@ -142,6 +193,8 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 		currentProcess.SetStatus("stopped")
 		currentProcess.ResetPid()
 		updateProcessMap(api, currentProcess.Id, nil)
+		api.finishOperationLocked(in.Id)
+		api.persistStateLocked()
 		return nil, err
 	}
 
@@ -170,6 +223,7 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 
 	osProcess, running := utils.GetProcess(newProcess.Pid)
 	if !running {
+		api.finishOperationLocked(in.Id)
 		return nil, status.Error(400, "failed to restart process")
 	}
 
@@ -178,9 +232,8 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	api.databaseByName[newProcess.Name] = newProcess
 	api.processes[newProcess.Id] = osProcess
 	delete(api.metricsUpdatedAt, newProcess.Id)
+	api.finishOperationLocked(in.Id)
 	api.persistStateLocked()
-
-	go osProcess.Wait()
 
 	return cloneProcess(newProcess), nil
 }

@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
+	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/fatih/color"
 
 	"github.com/spf13/cobra"
@@ -48,6 +50,31 @@ var logsCmd = &cobra.Command{
 
 			cyanBold := color.New(color.FgCyan, color.Bold)
 			cyanBold.Printf("[TAILING] Tailing last %d lines for [%s] process (change the value with --lines option)\n", tail, process.Name)
+
+			combinedLogPath := logstore.CombinedPath(process.LogFilePath)
+			if _, err := os.Stat(combinedLogPath); err == nil {
+				color.Cyan("%s merged last %d lines", combinedLogPath, tail)
+				entries, tailCursor, err := mergedLogEntries(process, combinedLogPath, tail)
+				if err != nil {
+					logger.Error().Msg(err.Error())
+					return
+				}
+				for _, entry := range entries {
+					printCombinedLogEntry(logPrefix, green, red, entry)
+				}
+
+				var wg sync.WaitGroup
+				wg.Add(1)
+				go func() {
+					if err := logstore.TailEntriesFromCursor(combinedLogPath, tailCursor, func(entry logstore.Entry) {
+						printCombinedLogEntry(logPrefix, green, red, entry)
+					}); err != nil {
+						logger.Error().Msg(err.Error())
+					}
+				}()
+				wg.Wait()
+				return
+			}
 
 			outLastModified := utils.GetLastModified(process.LogFilePath)
 			errLastModified := utils.GetLastModified(process.ErrFilePath)
@@ -94,6 +121,18 @@ var logsCmd = &cobra.Command{
 
 		logger.Error().Msgf("Process or Namespace %s not found", args[0])
 	},
+}
+
+func printCombinedLogEntry(logPrefix string, green func(a ...interface{}) string, red func(a ...interface{}) string, entry logstore.Entry) {
+	prefixColor := green
+	if entry.Stream == logstore.StderrStream {
+		prefixColor = red
+	}
+	fmt.Println(prefixColor(logPrefix), logstore.FormatEntry(entry))
+}
+
+func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]logstore.Entry, logstore.TailCursor, error) {
+	return logstore.ReadMergedEntries(combinedLogPath, process.LogFilePath, process.ErrFilePath, tail)
 }
 
 func init() {

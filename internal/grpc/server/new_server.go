@@ -21,6 +21,9 @@ type Handler struct {
 
 	processes        map[int32]*os.Process
 	metricsUpdatedAt map[int32]time.Time
+	operationGen     map[int32]int64
+	operationActive  map[int32]bool
+	nextOperationGen int64
 	nextId           int32
 
 	pb.UnimplementedProcessManagerServer
@@ -50,6 +53,8 @@ func NewServer(port int) (*grpc.Server, net.Listener, error) {
 		databaseByName:   make(map[string]*pb.Process, 0),
 		processes:        make(map[int32]*os.Process, 0),
 		metricsUpdatedAt: make(map[int32]time.Time),
+		operationGen:     make(map[int32]int64),
+		operationActive:  make(map[int32]bool),
 	}
 	pb.RegisterProcessManagerServer(s, handler)
 

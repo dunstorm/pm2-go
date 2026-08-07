@@ -28,10 +28,11 @@ PM2. Linux and macOS are supported; Windows is not currently supported.
 - Dump and restore process lists
 - Rotate logs by size and file count
 - Generate systemd units for daemon startup
+- Optional authenticated web dashboard
 
 ## Requirements
 
-- Go 1.24 or newer
+- Go 1.25.12 or newer
 - Linux or macOS
 - Docker, only if you want to run the containerized end-to-end checks
 
@@ -43,6 +44,12 @@ Install from the module:
 go install github.com/dunstorm/pm2-go/cmd/pm2-go@latest
 ```
 
+The optional web dashboard is a separate binary:
+
+```sh
+go install github.com/dunstorm/pm2-go/cmd/pm2-go-web@latest
+```
+
 Or build from a local checkout:
 
 ```sh
@@ -50,6 +57,7 @@ git clone https://github.com/dunstorm/pm2-go.git
 cd pm2-go
 make build
 ./bin/pm2-go --version
+./bin/pm2-go-web --help
 ```
 
 To install the checked-out version into your Go binary path:
@@ -151,6 +159,54 @@ APP_ENV=production pm2-go restart api --update-env
 For JSON ecosystem files, `--update-env` refreshes that shell environment base
 and still lets the file's `env` values override matching keys.
 
+## Web Dashboard
+
+PM2-GO includes an optional web dashboard. The dashboard is not exposed by the
+daemon itself. It runs as a separate HTTP server that talks to the local daemon
+over gRPC.
+
+Start it from the main CLI:
+
+```sh
+pm2-go web
+```
+
+Or run the companion binary directly:
+
+```sh
+pm2-go-web
+```
+
+Security defaults:
+
+- Binds to `127.0.0.1:9615` by default.
+- Requires a token-backed login.
+- Generates an ephemeral token at startup if `PM2_GO_WEB_TOKEN` or `--token` is
+  not set.
+- Refuses non-loopback hosts unless `--allow-remote` is passed.
+- Keeps process environment variables out of the web API response.
+- Protects lifecycle actions with a session CSRF token.
+- Supports `--read-only` when you want monitoring without web actions.
+- Supports `--secure-cookies` when HTTPS is terminated by a reverse proxy.
+
+For a stable token:
+
+```sh
+PM2_GO_WEB_TOKEN="$(openssl rand -base64 32)" pm2-go web
+```
+
+To expose the dashboard beyond localhost, put it behind TLS and set an explicit
+token:
+
+```sh
+PM2_GO_WEB_TOKEN="change-me" pm2-go web --host 0.0.0.0 --allow-remote --secure-cookies
+```
+
+The dashboard includes auto-refreshing process status, per-process last-hour
+CPU and memory charts, safe configuration details, stdout/stderr log tailing,
+an event timeline, and lifecycle actions for start, stop, restart, reload, and
+delete. Environment variable names are shown, but values stay redacted.
+
 ## Commands
 
 | Command | Purpose |
@@ -171,6 +227,7 @@ and still lets the file's `env` values override matching keys.
 | `pm2-go config` | Print local PM2-GO config. |
 | `pm2-go status [--json]` | Show daemon status. |
 | `pm2-go startup [--user] [--output pm2-go.service]` | Generate a systemd unit for daemon startup. |
+| `pm2-go web [start] [--host 127.0.0.1] [--port 9615]` | Start the optional authenticated web dashboard. |
 | `pm2-go kill` | Stop the daemon and managed processes. |
 
 ## Daemon and Files
@@ -253,11 +310,30 @@ throughput, long-running daemon memory use, or behavior under production load.
 
 ## Development
 
-Build the CLI:
+Build the CLI and optional web dashboard:
 
 ```sh
 make build
 ```
+
+Build only one binary:
+
+```sh
+make build/cli
+make build/web
+```
+
+Develop only the web dashboard without rebuilding after every CSS, HTML, or
+JavaScript edit:
+
+```sh
+PM2_GO_WEB_TOKEN=dev-token make web/dev
+```
+
+This serves `internal/web/assets` directly from disk and injects a local
+reload script. Keep the browser on `http://127.0.0.1:9615`, edit files under
+`internal/web/assets`, and the page refreshes automatically. Go changes still
+require restarting `make web/dev`.
 
 Run unit tests:
 
@@ -299,7 +375,7 @@ make protoc
 ## Releases
 
 GoReleaser configuration lives in `.goreleaser.yaml`. It builds static Linux and
-macOS binaries from `./cmd/pm2-go`.
+macOS binaries from `./cmd/pm2-go` and `./cmd/pm2-go-web`.
 
 For a local release dry run:
 

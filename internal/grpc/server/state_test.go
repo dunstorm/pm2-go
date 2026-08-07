@@ -142,6 +142,7 @@ func TestRestoreStateSpawnsPersistedProcesses(t *testing.T) {
 			Args:           []string{"-c", "import time; time.sleep(10)"},
 			AutoRestart:    true,
 			Env:            map[string]string{"PM2_GO_RESTORE_ENV": "restored"},
+			LogFileCount:   7,
 		},
 	})
 	if err != nil {
@@ -165,8 +166,16 @@ func TestRestoreStateSpawnsPersistedProcesses(t *testing.T) {
 	if process.Env["PM2_GO_RESTORE_ENV"] != "restored" {
 		t.Fatalf("expected restored process env, got %#v", process.Env)
 	}
+	if process.LogFileCount != 7 {
+		t.Fatalf("expected restored log file count 7, got %d", process.LogFileCount)
+	}
 	if _, running := utils.IsProcessRunning(process.Pid); !running {
 		t.Fatal("expected restored process to be running")
+	}
+
+	state := readPersistedState(t)
+	if len(state) != 1 || state[0].LogFileCount != 7 {
+		t.Fatalf("expected persisted restored log file count 7, got %#v", state)
 	}
 }
 

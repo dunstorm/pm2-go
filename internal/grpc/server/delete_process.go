@@ -20,6 +20,8 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 		}, nil
 	}
 
+	api.bumpOperationGenerationLocked(in.Id)
+	suppressProcessRestart(process)
 	if found := api.processes[in.Id]; found != nil {
 		_ = utils.KillProcessGroup(found)
 	}
@@ -28,9 +30,21 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 	delete(api.databaseByName, process.Name)
 	delete(api.processes, in.Id)
 	delete(api.metricsUpdatedAt, in.Id)
+	api.clearOperationGenerationLocked(in.Id)
 	api.persistStateLocked()
 
 	return &pb.DeleteProcessResponse{
 		Success: true,
 	}, nil
+}
+
+func suppressProcessRestart(process *pb.Process) {
+	process.AutoRestart = false
+	process.SetStopSignal(true)
+	process.RestartAt = nil
+	process.NextStartAt = nil
+	if process.ProcStatus != nil {
+		process.SetStatus("stopped")
+		process.ResetCPUMemory()
+	}
 }
