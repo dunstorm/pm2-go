@@ -19,6 +19,7 @@ const state = {
   logQuery: "",
   pendingAction: "",
   pendingProcessId: null,
+  inFlightActions: new Set(),
   toastTimer: null,
   chartTimer: null,
   processRequestSeq: 0,
@@ -982,6 +983,10 @@ function runAction(action, id = state.selectedId) {
     showToast("Dashboard is read-only.");
     return;
   }
+  if (hasInFlightAction(id)) {
+    showToast("Action already pending for this process.");
+    return;
+  }
   if (state.selectedId !== id) {
     state.selectedId = id;
     state.selectedProcess = null;
@@ -1014,6 +1019,10 @@ function openConfirm(action, id, process) {
 
 async function performAction(action = state.pendingAction, id = state.pendingProcessId ?? state.selectedId) {
   if (!action || !isProcessId(id)) return;
+  if (hasInFlightAction(id)) return;
+  const requestKey = actionRequestKey(action, id);
+  state.inFlightActions.add(requestKey);
+  updateReadOnlyState();
   try {
     await fetchJSON(`/api/processes/${id}/actions`, {
       method: "POST",
@@ -1032,6 +1041,9 @@ async function performAction(action = state.pendingAction, id = state.pendingPro
     closeConfirm();
     setError(error.message);
     showToast(error.message);
+  } finally {
+    state.inFlightActions.delete(requestKey);
+    updateReadOnlyState();
   }
 }
 
@@ -1057,9 +1069,24 @@ function closeLogsModal() {
 }
 
 function updateReadOnlyState() {
+  const selectedActionPending = hasInFlightAction(state.selectedId);
   document.querySelectorAll("[data-action]").forEach((control) => {
-    control.disabled = state.readOnly;
+    control.disabled = state.readOnly || selectedActionPending;
   });
+  els.confirmRun.disabled = state.readOnly || hasInFlightAction(state.pendingProcessId);
+}
+
+function actionRequestKey(action, id) {
+  return `${id}:${action}`;
+}
+
+function hasInFlightAction(id) {
+  if (!isProcessId(id)) return false;
+  const prefix = `${id}:`;
+  for (const key of state.inFlightActions) {
+    if (key.startsWith(prefix)) return true;
+  }
+  return false;
 }
 
 function setError(message) {

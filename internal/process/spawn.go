@@ -9,12 +9,15 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 	"github.com/rs/zerolog"
 )
+
+var logCaptureDrainTimeout = 2 * time.Second
 
 type SpawnParams struct {
 	Name                     string            `json:"name"`
@@ -164,6 +167,26 @@ func (params *SpawnParams) closeFiles() {
 	}
 }
 
+func waitForLogCapture(logsWG *sync.WaitGroup, readers ...*os.File) {
+	done := make(chan struct{})
+	go func() {
+		logsWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return
+	case <-time.After(logCaptureDrainTimeout):
+		for _, reader := range readers {
+			if reader != nil {
+				_ = reader.Close()
+			}
+		}
+		<-done
+	}
+}
+
 func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	if err := params.fillDefaults(); err != nil {
 		return nil, err
@@ -206,7 +229,7 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	closeLogCapture := func() {
 		_ = stdoutWriter.Close()
 		_ = stderrWriter.Close()
-		logsWG.Wait()
+		waitForLogCapture(&logsWG, stdoutReader, stderrReader)
 		combinedSink.close()
 		params.closeFiles()
 	}

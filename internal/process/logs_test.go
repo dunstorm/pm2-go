@@ -2,9 +2,11 @@ package process
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -284,6 +286,33 @@ func TestRotateLogFileWaitsForPathLock(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for rotation after path unlock")
+	}
+}
+
+func TestWaitForLogCaptureClosesReadersAfterTimeout(t *testing.T) {
+	previousTimeout := logCaptureDrainTimeout
+	logCaptureDrainTimeout = 50 * time.Millisecond
+	t.Cleanup(func() {
+		logCaptureDrainTimeout = previousTimeout
+	})
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("open pipe: %v", err)
+	}
+	defer writer.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(io.Discard, reader)
+	}()
+
+	started := time.Now()
+	waitForLogCapture(&wg, reader)
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("expected bounded log capture wait, took %s", elapsed)
 	}
 }
 
