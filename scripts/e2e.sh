@@ -106,6 +106,31 @@ assert_file_not_empty() {
 	[[ "$size" != "0" ]] || fail "expected $file to contain data"
 }
 
+wait_for_file_size_stable() {
+	local file="$1"
+	local timeout="${2:-30}"
+	local previous=""
+	local current
+	local stable_count=0
+
+	[[ -f "$file" ]] || fail "expected file to exist: $file"
+	for _ in $(seq 1 "$timeout"); do
+		current="$(wc -c <"$file" | tr -d '[:space:]')"
+		if [[ "$current" == "$previous" ]]; then
+			stable_count=$((stable_count + 1))
+			if [[ "$stable_count" -ge 3 ]]; then
+				return
+			fi
+		else
+			stable_count=0
+			previous="$current"
+		fi
+		sleep 0.1
+	done
+
+	fail "timed out waiting for $file size to stabilize"
+}
+
 assert_file_not_contains() {
 	local file="$1"
 	local needle="$2"
@@ -656,6 +681,7 @@ assert_contains "$stop_all_output" "stopped"
 
 log "flush logs"
 assert_file_not_empty "$stdout_log"
+wait_for_file_size_stable "$stdout_log"
 flush_output="$(capture_pm2 flush python-test)"
 assert_contains "$flush_output" "Logs flushed"
 assert_file_empty "$stdout_log"

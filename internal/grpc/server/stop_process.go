@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"time"
 
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
@@ -35,10 +36,14 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 		}, nil
 	}
 
+	pid := process.Pid
 	process.ResetPid()
 
 	// for child process
 	_ = utils.KillProcessGroup(found)
+	if pid > 0 {
+		utils.ExitPid(pid, 2*time.Second)
+	}
 	updateProcessMap(api, in.Id, nil)
 	api.persistStateLocked()
 

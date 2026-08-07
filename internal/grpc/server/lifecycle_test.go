@@ -116,6 +116,35 @@ func TestSpawnInvalidWorkingDirectoryDoesNotRegisterProcess(t *testing.T) {
 	}
 }
 
+func TestStopProcessWaitsForPidExit(t *testing.T) {
+	manager := newProcessManager(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	resp, err := manager.SpawnProcess(ctx, &pb.SpawnProcessRequest{
+		Name:           "stop-waits",
+		ExecutablePath: "python3",
+		Args:           []string{"-c", "import time; time.sleep(30)"},
+	})
+	if err != nil {
+		t.Fatalf("spawn process: %v", err)
+	}
+	if !resp.Success {
+		t.Fatal("expected spawn to succeed")
+	}
+
+	process, err := manager.FindProcess(ctx, &pb.FindProcessRequest{Name: "stop-waits"})
+	if err != nil {
+		t.Fatalf("find process: %v", err)
+	}
+	if _, err := manager.StopProcess(ctx, &pb.StopProcessRequest{Id: process.Id}); err != nil {
+		t.Fatalf("stop process: %v", err)
+	}
+	if _, running := utils.IsProcessRunning(process.Pid); running {
+		t.Fatalf("expected pid %d to exit before stop returned", process.Pid)
+	}
+}
+
 func TestRestartInvalidCronDoesNotStopRunningProcess(t *testing.T) {
 	manager := newProcessManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
