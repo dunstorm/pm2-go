@@ -187,6 +187,7 @@ Security defaults:
 - Keeps process environment variables out of the web API response.
 - Protects lifecycle actions with a session CSRF token.
 - Supports `--read-only` when you want monitoring without web actions.
+- Supports `--secure-cookies` when HTTPS is terminated by a reverse proxy.
 
 For a stable token:
 
@@ -198,7 +199,7 @@ To expose the dashboard beyond localhost, put it behind TLS and set an explicit
 token:
 
 ```sh
-PM2_GO_WEB_TOKEN="change-me" pm2-go web --host 0.0.0.0 --allow-remote
+PM2_GO_WEB_TOKEN="change-me" pm2-go web --host 0.0.0.0 --allow-remote --secure-cookies
 ```
 
 The dashboard includes auto-refreshing process status, per-process last-hour

@@ -17,14 +17,15 @@ const (
 )
 
 type Config struct {
-	Host        string
-	Port        int
-	Token       string
-	AllowRemote bool
-	ReadOnly    bool
-	AssetDir    string
-	DevReload   bool
-	SessionTTL  time.Duration
+	Host          string
+	Port          int
+	Token         string
+	AllowRemote   bool
+	ReadOnly      bool
+	SecureCookies bool
+	AssetDir      string
+	DevReload     bool
+	SessionTTL    time.Duration
 }
 
 type runtimeConfig struct {

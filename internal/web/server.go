@@ -141,7 +141,7 @@ func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  expiresAt,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   server.secureCookie(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.SetCookie(w, &http.Cookie{
@@ -150,7 +150,7 @@ func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  expiresAt,
 		HttpOnly: false,
-		Secure:   r.TLS != nil,
+		Secure:   server.secureCookie(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -171,7 +171,7 @@ func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   server.secureCookie(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.SetCookie(w, &http.Cookie{
@@ -180,10 +180,14 @@ func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: false,
-		Secure:   r.TLS != nil,
+		Secure:   server.secureCookie(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (server *Server) secureCookie(r *http.Request) bool {
+	return server.config.SecureCookies || r.TLS != nil
 }
 
 func (server *Server) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +203,7 @@ func (server *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		"host":                server.config.Host,
 		"port":                server.config.Port,
 		"read_only":           server.config.ReadOnly,
+		"secure_cookies":      server.config.SecureCookies,
 		"session_ttl_seconds": int(server.config.SessionTTL.Seconds()),
 		"token_generated":     server.config.tokenGenerated,
 	})

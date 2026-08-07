@@ -143,7 +143,7 @@ function bindEvents() {
   });
   els.processSelect.addEventListener("change", () => {
     const id = Number(els.processSelect.value);
-    if (id) selectProcess(id);
+    if (isProcessId(id)) selectProcess(id);
   });
   els.logStream.addEventListener("change", () => {
     state.logStream = els.logStream.value;
@@ -746,6 +746,7 @@ function renderAdminSettings() {
     ["Bind host", session.host || "-"],
     ["Bind port", session.port || "-"],
     ["Remote binding allowed", yesNo(session.allow_remote)],
+    ["Secure cookies forced", yesNo(session.secure_cookies)],
     ["Session TTL", formatDurationSeconds(session.session_ttl_seconds)],
     ["Generated token", yesNo(session.token_generated)],
     ["Dev assets", yesNo(session.dev_assets)],
@@ -765,6 +766,12 @@ function renderAdminSettings() {
       body: session.allow_remote
         ? "Only expose this behind trusted network controls or a reverse proxy with TLS."
         : "The dashboard accepts local access unless the host is changed explicitly.",
+    },
+    {
+      title: session.secure_cookies ? "Secure cookies are forced" : "Secure cookies follow the request",
+      body: session.secure_cookies
+        ? "Session cookies are always marked Secure for TLS-terminated proxy deployments."
+        : "Session cookies are marked Secure automatically when the backend request uses TLS.",
     },
     {
       title: session.token_generated ? "Ephemeral token is active" : "Configured token is active",
@@ -905,8 +912,12 @@ function resetLogs(render = true) {
   if (render) renderLogs();
 }
 
+function isProcessId(id) {
+  return Number.isInteger(id) && id >= 0;
+}
+
 function runAction(action, id = state.selectedId) {
-  if (!id) return;
+  if (!isProcessId(id)) return;
   if (state.readOnly) {
     showToast("Dashboard is read-only.");
     return;
@@ -934,8 +945,8 @@ function openConfirm(action, id, process) {
   document.body.classList.add("modal-open");
 }
 
-async function performAction(action = state.pendingAction, id = state.pendingProcessId || state.selectedId) {
-  if (!action || !id) return;
+async function performAction(action = state.pendingAction, id = state.pendingProcessId ?? state.selectedId) {
+  if (!action || !isProcessId(id)) return;
   try {
     await fetchJSON(`/api/processes/${id}/actions`, {
       method: "POST",

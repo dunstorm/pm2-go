@@ -131,6 +131,30 @@ func TestLoginRejectsInvalidToken(t *testing.T) {
 	}
 }
 
+func TestSecureCookiesConfigForcesSecureCookies(t *testing.T) {
+	server, err := NewServer(Config{
+		Host:          DefaultHost,
+		Port:          DefaultPort,
+		Token:         "secret",
+		SecureCookies: true,
+	}, fakeProcessSource{})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+
+	cookies := loginCookies(t, server)
+	seen := make(map[string]bool, len(cookies))
+	for _, cookie := range cookies {
+		seen[cookie.Name] = true
+		if !cookie.Secure {
+			t.Fatalf("expected %s cookie to be Secure", cookie.Name)
+		}
+	}
+	if !seen[sessionCookieName] || !seen[csrfCookieName] {
+		t.Fatalf("expected session and csrf cookies, got %#v", cookies)
+	}
+}
+
 func TestDaemonUnavailableReturnsServiceUnavailable(t *testing.T) {
 	server := newTestServer(t, fakeProcessSource{err: errors.New("unavailable")})
 	cookies := loginCookies(t, server)
