@@ -1,6 +1,7 @@
 package process
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -302,6 +303,49 @@ func TestRotateLogFileReopensActiveManagedFile(t *testing.T) {
 	}
 	if strings.Contains(string(activeContents), "before") {
 		t.Fatalf("expected active log not to contain old line, got %q", string(activeContents))
+	}
+}
+
+func TestRotateLogFileKeepsActiveWriterWhenReopenFails(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "api-combined.jsonl")
+	rotatedPath := logPath + ".0"
+	logFile := openManagedTestLogFile(t, logPath)
+
+	now := time.Now()
+	logFile.writePlainLine(now, defaultLogTimestampFormat, "before")
+
+	previousOpenLogFile := openLogFile
+	openLogFile = func(string) (*os.File, error) {
+		return nil, errors.New("open failed")
+	}
+	t.Cleanup(func() {
+		openLogFile = previousOpenLogFile
+	})
+
+	rotated, err := RotateLogFile(logPath, rotatedPath)
+	if err == nil {
+		t.Fatal("expected reopen error")
+	}
+	if rotated {
+		t.Fatal("expected rotation to roll back")
+	}
+	if logFile.file == nil {
+		t.Fatal("expected active writer to remain usable")
+	}
+
+	logFile.writePlainLine(now, defaultLogTimestampFormat, "after")
+	activeContents, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read active log: %v", err)
+	}
+	for _, line := range []string{"before", "after"} {
+		if !strings.Contains(string(activeContents), line) {
+			t.Fatalf("expected active log to contain %q, got %q", line, string(activeContents))
+		}
+	}
+	if _, err := os.Stat(rotatedPath); !os.IsNotExist(err) {
+		t.Fatalf("expected rolled-back archive to be absent, got err=%v", err)
 	}
 }
 

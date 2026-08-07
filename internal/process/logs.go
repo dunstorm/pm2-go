@@ -53,6 +53,9 @@ type processLogStream struct {
 }
 
 var activeLogFiles sync.Map
+var openLogFile = func(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+}
 
 var (
 	logFilePathLocksMu sync.Mutex
@@ -89,7 +92,7 @@ func openManagedLogFile(path string) (*managedLogFile, error) {
 	unlock := lockLogFilePath(path)
 	defer unlock()
 
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	file, err := openLogFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +160,7 @@ func rotateInactiveLogFile(filename, rotatedFilename string) (bool, error) {
 	if err != nil || !rotated {
 		return rotated, err
 	}
-	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	file, err := openLogFile(filename)
 	if err != nil {
 		return true, err
 	}
@@ -177,33 +180,40 @@ func rotateManagedLogFiles(filename, rotatedFilename string, files []*managedLog
 		}
 	}()
 
+	rotated, rotateErr := rotateLogPath(filename, rotatedFilename)
+	if rotateErr != nil || !rotated {
+		return rotated, rotateErr
+	}
+
+	newFiles := make(map[*managedLogFile]*os.File, len(files))
+	for _, logFile := range files {
+		file, err := openLogFile(filename)
+		if err != nil {
+			for _, opened := range newFiles {
+				_ = opened.Close()
+			}
+			if rollbackErr := rollbackRotatedLog(filename, rotatedFilename); rollbackErr != nil {
+				return true, fmt.Errorf("reopen active log: %w; rollback rotation: %v", err, rollbackErr)
+			}
+			return false, err
+		}
+		newFiles[logFile] = file
+	}
+
 	for _, logFile := range files {
 		if logFile.file != nil {
 			_ = logFile.file.Close()
-			logFile.file = nil
 		}
+		logFile.file = newFiles[logFile]
 	}
+	return true, nil
+}
 
-	rotated, rotateErr := rotateLogPath(filename, rotatedFilename)
-	var openErr error
-	for _, logFile := range files {
-		file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
-		if err != nil {
-			if openErr == nil {
-				openErr = err
-			}
-			continue
-		}
-		logFile.file = file
+func rollbackRotatedLog(filename, rotatedFilename string) error {
+	if err := os.Remove(filename); err != nil && !os.IsNotExist(err) {
+		return err
 	}
-
-	if rotateErr != nil {
-		return rotated, rotateErr
-	}
-	if openErr != nil {
-		return rotated, openErr
-	}
-	return rotated, rotateErr
+	return os.Rename(rotatedFilename, filename)
 }
 
 func (logFile *managedLogFile) close() {
