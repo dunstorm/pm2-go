@@ -292,6 +292,28 @@ func TestReadLogHonorsTailAfterBoundedInitialRead(t *testing.T) {
 	}
 }
 
+func TestReadLogReturnsConsumedOffset(t *testing.T) {
+	logFile := t.TempDir() + "/incremental.log"
+	contents := "first\nsecond\n"
+	if err := os.WriteFile(logFile, []byte(contents), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	logs, err := readLog(logFile, int64(len("first\n")), 10)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if logs.Offset != int64(len(contents)) {
+		t.Fatalf("expected consumed offset %d, got %d", len(contents), logs.Offset)
+	}
+	if logs.Size != logs.Offset {
+		t.Fatalf("expected size to match consumed offset, got size=%d offset=%d", logs.Size, logs.Offset)
+	}
+	if len(logs.Lines) != 1 || logs.Lines[0] != "second" {
+		t.Fatalf("expected incremental line, got %#v", logs.Lines)
+	}
+}
+
 func TestProcessCombinedLogs(t *testing.T) {
 	dir := t.TempDir()
 	logFile := dir + "/api-out.log"

@@ -41,6 +41,7 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 	defer file.Close()
 
 	initialRead := offset == 0
+	readStart := offset
 	var reader io.Reader = file
 	if offset == 0 && size > maxInitialLogBytes {
 		offset = size - maxInitialLogBytes
@@ -48,7 +49,8 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 			return logResponse{}, err
 		}
 		buffered := bufio.NewReader(file)
-		_, _ = buffered.ReadString('\n')
+		skipped, _ := buffered.ReadString('\n')
+		readStart = offset + int64(len(skipped))
 		reader = buffered
 	} else if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return logResponse{}, err
@@ -62,9 +64,10 @@ func readLog(filePath string, offset int64, tailLines int) (logResponse, error) 
 	if initialRead && len(lines) > tailLines {
 		lines = lines[len(lines)-tailLines:]
 	}
+	consumedOffset := readStart + int64(len(contents))
 	return logResponse{
-		Offset: size,
-		Size:   size,
+		Offset: consumedOffset,
+		Size:   consumedOffset,
 		Lines:  lines,
 	}, nil
 }

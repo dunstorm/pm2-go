@@ -20,6 +20,7 @@ const state = {
   pendingProcessId: null,
   toastTimer: null,
   chartTimer: null,
+  processRequestSeq: 0,
   detailRequestSeq: 0,
   logRequestSeq: 0,
 };
@@ -245,16 +246,19 @@ async function loadSession() {
 }
 
 async function refreshAll() {
-  await loadProcesses();
+  const loaded = await loadProcesses();
+  if (!loaded) return;
   if (isProcessId(state.selectedId)) {
     await loadSelectedDetails();
   }
 }
 
 async function loadProcesses() {
+  const requestSeq = ++state.processRequestSeq;
   setError("");
   try {
     const data = await fetchJSON("/api/processes");
+    if (!isCurrentProcessRequest(requestSeq)) return false;
     state.processes = Array.isArray(data.processes) ? data.processes : [];
     state.events = Array.isArray(data.events) ? data.events : state.events;
 
@@ -273,7 +277,9 @@ async function loadProcesses() {
 
     els.updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
     renderAll();
+    return true;
   } catch (error) {
+    if (!isCurrentProcessRequest(requestSeq)) return false;
     state.processes = [];
     state.selectedId = null;
     state.selectedProcess = null;
@@ -281,6 +287,7 @@ async function loadProcesses() {
     state.logRequestSeq += 1;
     setError(error.message);
     renderAll();
+    return false;
   }
 }
 
@@ -408,6 +415,10 @@ function fetchLogStream(processId, stream, tail) {
 
 function isCurrentDetailRequest(processId, seq) {
   return state.selectedId === processId && state.detailRequestSeq === seq;
+}
+
+function isCurrentProcessRequest(seq) {
+  return state.processRequestSeq === seq;
 }
 
 function isCurrentLogRequest(request) {
