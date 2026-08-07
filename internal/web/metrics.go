@@ -92,6 +92,7 @@ func (store *metricsStore) observe(processes []*pb.Process, fullSnapshot bool) {
 		for id := range store.status {
 			if _, ok := seen[id]; !ok {
 				delete(store.status, id)
+				delete(store.points, id)
 			}
 		}
 	}
