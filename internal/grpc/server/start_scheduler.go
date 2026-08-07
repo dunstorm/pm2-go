@@ -193,6 +193,10 @@ func refreshProcessMetrics(handler *Handler, p *pb.Process, force bool) (int64, 
 }
 
 func restartProcess(handler *Handler, p *pb.Process) {
+	if handler.databaseById[p.Id] != p {
+		return
+	}
+
 	handler.logger.Info().Msgf("Restarting process %s", p.Name)
 	p.IncreaseRestarts()
 	p.RestartAt = nil
@@ -243,6 +247,10 @@ func restartProcess(handler *Handler, p *pb.Process) {
 }
 
 func restartLiveProcess(handler *Handler, p *pb.Process) {
+	if handler.databaseById[p.Id] != p || p.GetStopSignal() {
+		return
+	}
+
 	found := handler.processes[p.Id]
 	if found == nil && p.Pid != 0 {
 		if process, running := utils.GetProcess(p.Pid); running {

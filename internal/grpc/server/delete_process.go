@@ -20,6 +20,7 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 		}, nil
 	}
 
+	suppressProcessRestart(process)
 	if found := api.processes[in.Id]; found != nil {
 		_ = utils.KillProcessGroup(found)
 	}
@@ -33,4 +34,15 @@ func (api *Handler) DeleteProcess(ctx context.Context, in *pb.DeleteProcessReque
 	return &pb.DeleteProcessResponse{
 		Success: true,
 	}, nil
+}
+
+func suppressProcessRestart(process *pb.Process) {
+	process.AutoRestart = false
+	process.SetStopSignal(true)
+	process.RestartAt = nil
+	process.NextStartAt = nil
+	if process.ProcStatus != nil {
+		process.SetStatus("stopped")
+		process.ResetCPUMemory()
+	}
 }
