@@ -69,8 +69,10 @@ var webCmd = &cobra.Command{
 		if token == "" {
 			token = os.Getenv("PM2_GO_WEB_TOKEN")
 		}
-		if !noDaemon {
+		if shouldSpawnWebDaemon(noDaemon, daemonPort) {
 			master.SpawnDaemon()
+		} else if !noDaemon {
+			logger.Warn().Msgf("Skipping automatic daemon startup for custom daemon port %d; start pm2-go daemon separately or use --daemon-port %d", daemonPort, web.DefaultDaemonPort)
 		}
 
 		server, err := web.NewServer(web.Config{
@@ -95,6 +97,10 @@ var webCmd = &cobra.Command{
 			logger.Fatal().Msg(err.Error())
 		}
 	},
+}
+
+func shouldSpawnWebDaemon(noDaemon bool, daemonPort int) bool {
+	return !noDaemon && daemonPort == web.DefaultDaemonPort
 }
 
 func init() {

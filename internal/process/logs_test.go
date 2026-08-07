@@ -262,6 +262,57 @@ func TestRotateLogFileReopensActiveManagedFile(t *testing.T) {
 	}
 }
 
+func TestRotateLogFileReopensAllActiveManagedFilesForPath(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "api-combined.jsonl")
+	rotatedPath := logPath + ".0"
+	firstLogFile := openManagedTestLogFile(t, logPath)
+	secondLogFile := openManagedTestLogFile(t, logPath)
+
+	now := time.Now()
+	firstLogFile.writePlainLine(now, defaultLogTimestampFormat, "before-a")
+	secondLogFile.writePlainLine(now, defaultLogTimestampFormat, "before-b")
+	rotated, err := RotateLogFile(logPath, rotatedPath)
+	if err != nil {
+		t.Fatalf("rotate log: %v", err)
+	}
+	if !rotated {
+		t.Fatal("expected active log file to rotate")
+	}
+	firstLogFile.writePlainLine(now, defaultLogTimestampFormat, "after-a")
+	secondLogFile.writePlainLine(now, defaultLogTimestampFormat, "after-b")
+
+	rotatedContents, err := os.ReadFile(rotatedPath)
+	if err != nil {
+		t.Fatalf("read rotated log: %v", err)
+	}
+	for _, line := range []string{"before-a", "before-b"} {
+		if !strings.Contains(string(rotatedContents), line) {
+			t.Fatalf("expected rotated log to contain %q, got %q", line, string(rotatedContents))
+		}
+	}
+	for _, line := range []string{"after-a", "after-b"} {
+		if strings.Contains(string(rotatedContents), line) {
+			t.Fatalf("expected rotated log not to contain %q, got %q", line, string(rotatedContents))
+		}
+	}
+
+	activeContents, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read active log: %v", err)
+	}
+	for _, line := range []string{"after-a", "after-b"} {
+		if !strings.Contains(string(activeContents), line) {
+			t.Fatalf("expected active log to contain %q, got %q", line, string(activeContents))
+		}
+	}
+	for _, line := range []string{"before-a", "before-b"} {
+		if strings.Contains(string(activeContents), line) {
+			t.Fatalf("expected active log not to contain %q, got %q", line, string(activeContents))
+		}
+	}
+}
+
 func TestRotateLogFileWaitsForPathLock(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	unlock := lockLogFilePath(logPath)

@@ -27,6 +27,10 @@ type managedLogFile struct {
 	file *os.File
 }
 
+type activeManagedLogFiles struct {
+	files map[*managedLogFile]struct{}
+}
+
 type combinedLogSink struct {
 	file    *managedLogFile
 	entries chan logstore.Entry
@@ -62,29 +66,53 @@ func openManagedLogFile(path string) (*managedLogFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return registerManagedLogFile(path, file), nil
+	return registerManagedLogFileLocked(path, file), nil
 }
 
 func registerManagedLogFile(path string, file *os.File) *managedLogFile {
+	unlock := lockLogFilePath(path)
+	defer unlock()
+
+	return registerManagedLogFileLocked(path, file)
+}
+
+func registerManagedLogFileLocked(path string, file *os.File) *managedLogFile {
 	logFile := &managedLogFile{path: path, file: file}
-	activeLogFiles.Store(path, logFile)
+	value, _ := activeLogFiles.LoadOrStore(path, &activeManagedLogFiles{files: make(map[*managedLogFile]struct{})})
+	active := value.(*activeManagedLogFiles)
+	active.files[logFile] = struct{}{}
 	return logFile
 }
 
 func RotateLogFile(filename, rotatedFilename string) (bool, error) {
+	if filename == "" || rotatedFilename == "" {
+		return false, nil
+	}
+
 	unlock := lockLogFilePath(filename)
 	defer unlock()
 
-	if value, ok := activeLogFiles.Load(filename); ok {
-		return value.(*managedLogFile).rotate(rotatedFilename)
+	files := activeManagedLogFileList(filename)
+	if len(files) > 0 {
+		return rotateManagedLogFiles(filename, rotatedFilename, files)
 	}
 	return rotateInactiveLogFile(filename, rotatedFilename)
 }
 
-func rotateInactiveLogFile(filename, rotatedFilename string) (bool, error) {
-	if filename == "" || rotatedFilename == "" {
-		return false, nil
+func activeManagedLogFileList(filename string) []*managedLogFile {
+	value, ok := activeLogFiles.Load(filename)
+	if !ok {
+		return nil
 	}
+	active := value.(*activeManagedLogFiles)
+	files := make([]*managedLogFile, 0, len(active.files))
+	for logFile := range active.files {
+		files = append(files, logFile)
+	}
+	return files
+}
+
+func rotateLogPath(filename, rotatedFilename string) (bool, error) {
 	if _, err := os.Stat(filename); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -93,6 +121,14 @@ func rotateInactiveLogFile(filename, rotatedFilename string) (bool, error) {
 	}
 	if err := os.Rename(filename, rotatedFilename); err != nil {
 		return false, err
+	}
+	return true, nil
+}
+
+func rotateInactiveLogFile(filename, rotatedFilename string) (bool, error) {
+	rotated, err := rotateLogPath(filename, rotatedFilename)
+	if err != nil || !rotated {
+		return rotated, err
 	}
 	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
 	if err != nil {
@@ -104,25 +140,42 @@ func rotateInactiveLogFile(filename, rotatedFilename string) (bool, error) {
 	return true, nil
 }
 
-func (logFile *managedLogFile) rotate(rotatedFilename string) (bool, error) {
-	if logFile == nil {
-		return false, nil
+func rotateManagedLogFiles(filename, rotatedFilename string, files []*managedLogFile) (bool, error) {
+	for _, logFile := range files {
+		logFile.mu.Lock()
+	}
+	defer func() {
+		for i := len(files) - 1; i >= 0; i-- {
+			files[i].mu.Unlock()
+		}
+	}()
+
+	for _, logFile := range files {
+		if logFile.file != nil {
+			_ = logFile.file.Close()
+			logFile.file = nil
+		}
 	}
 
-	logFile.mu.Lock()
-	defer logFile.mu.Unlock()
-
-	if logFile.file != nil {
-		_ = logFile.file.Close()
-		logFile.file = nil
+	rotated, rotateErr := rotateLogPath(filename, rotatedFilename)
+	var openErr error
+	for _, logFile := range files {
+		file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+		if err != nil {
+			if openErr == nil {
+				openErr = err
+			}
+			continue
+		}
+		logFile.file = file
 	}
 
-	rotated, rotateErr := rotateInactiveLogFile(logFile.path, rotatedFilename)
-	file, openErr := os.OpenFile(logFile.path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	if rotateErr != nil {
+		return rotated, rotateErr
+	}
 	if openErr != nil {
 		return rotated, openErr
 	}
-	logFile.file = file
 	return rotated, rotateErr
 }
 
@@ -141,8 +194,12 @@ func (logFile *managedLogFile) close() {
 	}
 	logFile.mu.Unlock()
 
-	if current, ok := activeLogFiles.Load(logFile.path); ok && current == logFile {
-		activeLogFiles.Delete(logFile.path)
+	if value, ok := activeLogFiles.Load(logFile.path); ok {
+		active := value.(*activeManagedLogFiles)
+		delete(active.files, logFile)
+		if len(active.files) == 0 {
+			activeLogFiles.Delete(logFile.path)
+		}
 	}
 }
 
