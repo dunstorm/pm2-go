@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/dunstorm/pm2-go/internal/web"
@@ -45,7 +44,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "pm2-go-web token: %s\n", server.Token())
 	}
 	fmt.Fprintf(os.Stderr, "pm2-go-web listening on http://%s\n", server.Addr())
-	if err := http.ListenAndServe(server.Addr(), server.Handler()); err != nil {
+	if err := server.HTTPServer().ListenAndServe(); err != nil {
 		fmt.Fprintf(os.Stderr, "pm2-go-web: %v\n", err)
 		os.Exit(1)
 	}

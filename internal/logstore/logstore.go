@@ -27,10 +27,11 @@ type Entry struct {
 }
 
 type tailedFile struct {
-	file   *os.File
-	reader *bufio.Reader
-	id     string
-	size   int64
+	file       *os.File
+	reader     *bufio.Reader
+	id         string
+	generation string
+	size       int64
 }
 
 func CombinedPath(stdoutLogPath string) string {
@@ -159,6 +160,14 @@ func TailEntries(filename string, handle func(Entry)) error {
 				}
 				return err
 			}
+			nextGeneration := ReadCursorGeneration(filename)
+			if tail.generation != nextGeneration {
+				if err := tail.reopen(filename); err != nil {
+					return err
+				}
+				break
+			}
+
 			nextID := fileIdentity(info)
 			if tail.id != "" && nextID != "" && tail.id != nextID {
 				if err := tail.reopen(filename); err != nil {
@@ -203,10 +212,11 @@ func openTailedFile(filename string, seekEnd bool) (*tailedFile, error) {
 	}
 
 	return &tailedFile{
-		file:   file,
-		reader: bufio.NewReader(file),
-		id:     fileIdentity(info),
-		size:   info.Size(),
+		file:       file,
+		reader:     bufio.NewReader(file),
+		id:         fileIdentity(info),
+		generation: ReadCursorGeneration(filename),
+		size:       info.Size(),
 	}, nil
 }
 

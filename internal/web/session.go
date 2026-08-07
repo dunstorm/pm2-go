@@ -37,9 +37,11 @@ func (store *sessionStore) create() (string, string, time.Time, error) {
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
-	expiresAt := store.now().Add(store.ttl)
+	now := store.now()
+	expiresAt := now.Add(store.ttl)
 
 	store.mu.Lock()
+	store.pruneExpiredLocked(now)
 	store.sessions[id] = session{
 		expiresAt: expiresAt,
 		csrfToken: csrfToken,
@@ -91,6 +93,14 @@ func (store *sessionStore) delete(id string) {
 	store.mu.Lock()
 	delete(store.sessions, id)
 	store.mu.Unlock()
+}
+
+func (store *sessionStore) pruneExpiredLocked(now time.Time) {
+	for id, session := range store.sessions {
+		if !session.expiresAt.After(now) {
+			delete(store.sessions, id)
+		}
+	}
 }
 
 func generateSessionID() (string, error) {

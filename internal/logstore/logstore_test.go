@@ -108,3 +108,40 @@ func TestTailEntriesReopensAfterRotation(t *testing.T) {
 		t.Fatal("timed out waiting for tailed replacement entry")
 	}
 }
+
+func TestTailEntriesReopensAfterCursorGenerationChanges(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	if err := os.WriteFile(filePath, []byte(`{"stream":"stdout","line":"before"}`+"\n"), 0600); err != nil {
+		t.Fatalf("write initial log: %v", err)
+	}
+
+	entries := make(chan Entry, 1)
+	errs := make(chan error, 1)
+	go func() {
+		errs <- TailEntries(filePath, func(entry Entry) {
+			entries <- entry
+		})
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+	if err := os.Truncate(filePath, 0); err != nil {
+		t.Fatalf("truncate log: %v", err)
+	}
+	if err := BumpCursorGeneration(filePath); err != nil {
+		t.Fatalf("bump cursor generation: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte(`{"stream":"stderr","line":"after-after-after-after"}`+"\n"), 0600); err != nil {
+		t.Fatalf("write regenerated log: %v", err)
+	}
+
+	select {
+	case entry := <-entries:
+		if entry.Stream != StderrStream || entry.Line != "after-after-after-after" {
+			t.Fatalf("expected regenerated entry, got %#v", entry)
+		}
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for tailed regenerated entry")
+	}
+}

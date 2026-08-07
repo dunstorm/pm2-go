@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 
 	"github.com/dunstorm/pm2-go/internal/web"
@@ -93,7 +92,7 @@ var webCmd = &cobra.Command{
 			logger.Warn().Msgf("Web token: %s", server.Token())
 		}
 		logger.Info().Msgf("Web dashboard listening on http://%s", server.Addr())
-		if err := http.ListenAndServe(server.Addr(), server.Handler()); err != nil {
+		if err := server.HTTPServer().ListenAndServe(); err != nil {
 			logger.Fatal().Msg(err.Error())
 		}
 	},

@@ -73,6 +73,27 @@ func TestAPIRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestHTTPServerSetsTimeouts(t *testing.T) {
+	server := newTestServer(t, fakeProcessSource{})
+	httpServer := server.HTTPServer()
+
+	if httpServer.Addr != server.Addr() {
+		t.Fatalf("expected addr %q, got %q", server.Addr(), httpServer.Addr)
+	}
+	if httpServer.Handler == nil {
+		t.Fatal("expected handler")
+	}
+	if httpServer.ReadHeaderTimeout <= 0 {
+		t.Fatal("expected read header timeout")
+	}
+	if httpServer.ReadTimeout <= 0 {
+		t.Fatal("expected read timeout")
+	}
+	if httpServer.IdleTimeout <= 0 {
+		t.Fatal("expected idle timeout")
+	}
+}
+
 func TestLoginSetsSessionAndListsProcesses(t *testing.T) {
 	server := newTestServer(t, fakeProcessSource{processes: []*pb.Process{testProcess()}})
 

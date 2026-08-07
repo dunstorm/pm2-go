@@ -24,6 +24,12 @@ const sessionCookieName = "pm2_go_web_session"
 const csrfCookieName = "pm2_go_web_csrf"
 const devReloadScriptPath = "/assets/dev-reload.js"
 
+const (
+	httpReadHeaderTimeout = 5 * time.Second
+	httpReadTimeout       = 30 * time.Second
+	httpIdleTimeout       = 120 * time.Second
+)
+
 //go:embed assets/*
 var embeddedAssets embed.FS
 
@@ -99,6 +105,16 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/processes", server.requireAuth(server.handleProcesses))
 	mux.HandleFunc("/", server.requireAuth(server.handleIndex))
 	return securityHeaders(mux)
+}
+
+func (server *Server) HTTPServer() *http.Server {
+	return &http.Server{
+		Addr:              server.Addr(),
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		IdleTimeout:       httpIdleTimeout,
+	}
 }
 
 func (server *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
