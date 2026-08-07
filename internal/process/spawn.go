@@ -218,6 +218,10 @@ func WaitForSpawnedProcess(pid int32, timeout time.Duration) (bool, bool) {
 	}
 }
 
+func deleteSpawnedProcessWait(pid int32, waitDone chan struct{}) {
+	spawnedProcessWaits.CompareAndDelete(pid, waitDone)
+}
+
 func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	if err := params.fillDefaults(); err != nil {
 		return nil, err
@@ -286,7 +290,7 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	go func() {
 		_ = cmd.Wait()
 		close(waitDone)
-		spawnedProcessWaits.Delete(pid)
+		deleteSpawnedProcessWait(pid, waitDone)
 		closeLogCapture()
 	}()
 

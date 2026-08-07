@@ -254,20 +254,19 @@ async function refreshAll() {
     state.processRefreshQueued = true;
     return state.processRefreshPromise;
   }
-  const refreshPromise = runRefreshQueue().finally(() => {
+  const refreshPromise = runRefreshAll().finally(() => {
     if (state.processRefreshPromise === refreshPromise) {
       state.processRefreshPromise = null;
+    }
+    if (state.processRefreshQueued) {
+      state.processRefreshQueued = false;
+      window.setTimeout(() => {
+        refreshAll();
+      }, 0);
     }
   });
   state.processRefreshPromise = refreshPromise;
   return refreshPromise;
-}
-
-async function runRefreshQueue() {
-  do {
-    state.processRefreshQueued = false;
-    await runRefreshAll();
-  } while (state.processRefreshQueued);
 }
 
 async function runRefreshAll() {

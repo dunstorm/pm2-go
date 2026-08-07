@@ -64,6 +64,32 @@ func TestWaitForSpawnedProcessTracksCmdWait(t *testing.T) {
 	}
 }
 
+func TestDeleteSpawnedProcessWaitKeepsReusedPIDRegistration(t *testing.T) {
+	const pid int32 = -4242
+	oldDone := make(chan struct{})
+	newDone := make(chan struct{})
+	spawnedProcessWaits.Store(pid, oldDone)
+	spawnedProcessWaits.Store(pid, newDone)
+	t.Cleanup(func() {
+		spawnedProcessWaits.Delete(pid)
+	})
+
+	deleteSpawnedProcessWait(pid, oldDone)
+
+	value, ok := spawnedProcessWaits.Load(pid)
+	if !ok {
+		t.Fatal("expected reused PID registration to remain")
+	}
+	if value != newDone {
+		t.Fatal("expected stale wait channel not to delete reused registration")
+	}
+
+	deleteSpawnedProcessWait(pid, newDone)
+	if _, ok := spawnedProcessWaits.Load(pid); ok {
+		t.Fatal("expected matching wait channel to be deleted")
+	}
+}
+
 func TestSpawnNewProcessReturnsPidFileError(t *testing.T) {
 	zerolog.SetGlobalLevel(zerolog.Disabled)
 	home := t.TempDir()
