@@ -99,15 +99,15 @@ func TestMergedLogEntriesReturnsCombinedSnapshotOffset(t *testing.T) {
 	contents := `{"timestamp":"2026-08-07T10:00:00Z","stream":"stdout","line":"ready"}` + "\n"
 	writePlainLog(t, combinedPath, strings.TrimRight(contents, "\n"))
 
-	_, offset, err := mergedLogEntries(&pb.Process{
+	_, cursor, err := mergedLogEntries(&pb.Process{
 		LogFilePath: outPath,
 		ErrFilePath: filepath.Join(dir, "api-err.log"),
 	}, combinedPath, 10)
 	if err != nil {
 		t.Fatalf("merge log entries: %v", err)
 	}
-	if offset != int64(len(contents)) {
-		t.Fatalf("expected snapshot offset %d, got %d", len(contents), offset)
+	if cursor.Offset != int64(len(contents)) {
+		t.Fatalf("expected snapshot offset %d, got %d", len(contents), cursor.Offset)
 	}
 }
 

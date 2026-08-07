@@ -2,6 +2,7 @@ package logstore
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,13 @@ type Entry struct {
 	Timestamp string `json:"timestamp"`
 	Stream    string `json:"stream"`
 	Line      string `json:"line"`
+}
+
+type TailCursor struct {
+	Offset     int64
+	FileID     string
+	Generation string
+	snapshot   bool
 }
 
 type tailedFile struct {
@@ -111,14 +119,19 @@ func FormatEntry(entry Entry) string {
 }
 
 func ReadEntries(filename string, tail int) ([]Entry, error) {
-	entries, _, err := ReadEntriesWithOffset(filename, tail)
+	entries, _, err := ReadEntriesWithCursor(filename, tail)
 	return entries, err
 }
 
 func ReadEntriesWithOffset(filename string, tail int) ([]Entry, int64, error) {
-	lines, offset, err := readTailLines(filename, tail)
+	entries, cursor, err := ReadEntriesWithCursor(filename, tail)
+	return entries, cursor.Offset, err
+}
+
+func ReadEntriesWithCursor(filename string, tail int) ([]Entry, TailCursor, error) {
+	lines, cursor, err := readTailLines(filename, tail)
 	if err != nil {
-		return nil, 0, err
+		return nil, TailCursor{}, err
 	}
 
 	entries := make([]Entry, 0, len(lines))
@@ -132,7 +145,7 @@ func ReadEntriesWithOffset(filename string, tail int) ([]Entry, int64, error) {
 		}
 		entries = append(entries, entry)
 	}
-	return entries, offset, nil
+	return entries, cursor, nil
 }
 
 func TailEntries(filename string, handle func(Entry)) error {
@@ -140,12 +153,20 @@ func TailEntries(filename string, handle func(Entry)) error {
 }
 
 func TailEntriesFrom(filename string, offset int64, handle func(Entry)) error {
-	tail, err := openTailedFile(filename, offset < 0)
+	return TailEntriesFromCursor(filename, TailCursor{Offset: offset}, handle)
+}
+
+func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry)) error {
+	tail, err := openTailedFile(filename, cursor.Offset < 0)
 	if err != nil {
 		return err
 	}
 	defer tail.close()
-	if offset >= 0 {
+	if cursor.Offset >= 0 {
+		offset := cursor.Offset
+		if cursor.staleFor(tail) {
+			offset = 0
+		}
 		if offset > tail.size {
 			offset = 0
 		}
@@ -211,6 +232,19 @@ func TailEntriesFrom(filename string, offset int64, handle func(Entry)) error {
 	}
 }
 
+func (cursor TailCursor) staleFor(tail *tailedFile) bool {
+	if !cursor.snapshot {
+		return false
+	}
+	if cursor.Generation != tail.generation {
+		return true
+	}
+	if cursor.FileID != "" && tail.id != "" && cursor.FileID != tail.id {
+		return true
+	}
+	return false
+}
+
 func openTailedFile(filename string, seekEnd bool) (*tailedFile, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -263,53 +297,111 @@ func fileIdentity(info os.FileInfo) string {
 	return ""
 }
 
-func readTailLines(filename string, tail int) ([]string, int64, error) {
-	if tail <= 0 {
-		info, err := os.Stat(filename)
-		if err != nil {
-			return nil, 0, err
-		}
-		return nil, info.Size(), nil
-	}
-
+func readTailLines(filename string, tail int) ([]string, TailCursor, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, 0, err
+		return nil, TailCursor{}, err
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		return nil, 0, err
+		return nil, TailCursor{}, err
 	}
 
-	offset := info.Size() - 256*1024
-	if offset < 0 {
-		offset = 0
+	cursor := TailCursor{
+		Offset:     info.Size(),
+		FileID:     fileIdentity(info),
+		Generation: ReadCursorGeneration(filename),
+		snapshot:   true,
 	}
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return nil, 0, err
-	}
-	reader := bufio.NewReader(file)
-	if offset > 0 {
-		_, _ = reader.ReadString('\n')
+	if tail <= 0 || info.Size() == 0 {
+		return nil, cursor, nil
 	}
 
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	lines := make([]string, 0, tail)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	const chunkSize int64 = 256 * 1024
+	position := info.Size()
+	segments := make([][]byte, 0)
+	bufferLen := 0
+	newlineCount := 0
+	endsWithoutNewline := false
+	firstChunk := true
+	for position > 0 {
+		readSize := minInt64(position, chunkSize)
+		position -= readSize
+
+		chunk := make([]byte, readSize)
+		n, err := file.ReadAt(chunk, position)
+		if err != nil && err != io.EOF {
+			return nil, TailCursor{}, err
+		}
+		if n == 0 {
+			continue
+		}
+		chunk = chunk[:n]
+		if firstChunk {
+			endsWithoutNewline = chunk[len(chunk)-1] != '\n'
+			firstChunk = false
+		}
+		segments = append(segments, chunk)
+		bufferLen += n
+		newlineCount += bytes.Count(chunk, []byte{'\n'})
+		if tailLineCount(newlineCount, endsWithoutNewline, position == 0) >= tail {
+			break
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, 0, err
+
+	buffer := make([]byte, 0, bufferLen)
+	for i := len(segments) - 1; i >= 0; i-- {
+		buffer = append(buffer, segments[i]...)
+	}
+	lines := splitTailLines(buffer, tail, position == 0)
+	if len(lines) > tail {
+		lines = lines[len(lines)-tail:]
+	}
+	return lines, cursor, nil
+}
+
+func tailLineCount(newlineCount int, endsWithoutNewline bool, atStart bool) int {
+	if newlineCount == 0 && !endsWithoutNewline {
+		return 0
+	}
+
+	count := newlineCount
+	if endsWithoutNewline {
+		count++
+	}
+	if !atStart {
+		count--
+	}
+	if count < 0 {
+		return 0
+	}
+	return count
+}
+
+func splitTailLines(buffer []byte, tail int, atStart bool) []string {
+	if !atStart {
+		newlineIndex := bytes.IndexByte(buffer, '\n')
+		if newlineIndex < 0 {
+			return nil
+		}
+		buffer = buffer[newlineIndex+1:]
+	}
+
+	lines := strings.Split(string(buffer), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
 	}
 	if len(lines) > tail {
 		lines = lines[len(lines)-tail:]
 	}
-	consumedOffset, err := file.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return nil, 0, err
+	return lines
+}
+
+func minInt64(left, right int64) int64 {
+	if left < right {
+		return left
 	}
-	return lines, consumedOffset, nil
+	return right
 }

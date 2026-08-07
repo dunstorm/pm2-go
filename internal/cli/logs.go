@@ -57,7 +57,7 @@ var logsCmd = &cobra.Command{
 			combinedLogPath := logstore.CombinedPath(process.LogFilePath)
 			if _, err := os.Stat(combinedLogPath); err == nil {
 				color.Cyan("%s merged last %d lines", combinedLogPath, tail)
-				entries, tailOffset, err := mergedLogEntries(process, combinedLogPath, tail)
+				entries, tailCursor, err := mergedLogEntries(process, combinedLogPath, tail)
 				if err != nil {
 					logger.Error().Msg(err.Error())
 					return
@@ -69,7 +69,7 @@ var logsCmd = &cobra.Command{
 				var wg sync.WaitGroup
 				wg.Add(1)
 				go func() {
-					if err := logstore.TailEntriesFrom(combinedLogPath, tailOffset, func(entry logstore.Entry) {
+					if err := logstore.TailEntriesFromCursor(combinedLogPath, tailCursor, func(entry logstore.Entry) {
 						printCombinedLogEntry(logPrefix, green, red, entry)
 					}); err != nil {
 						logger.Error().Msg(err.Error())
@@ -140,21 +140,21 @@ type sortableLogEntry struct {
 	order      int
 }
 
-func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]logstore.Entry, int64, error) {
-	combinedEntries, tailOffset, err := logstore.ReadEntriesWithOffset(combinedLogPath, tail)
+func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]logstore.Entry, logstore.TailCursor, error) {
+	combinedEntries, tailCursor, err := logstore.ReadEntriesWithCursor(combinedLogPath, tail)
 	if err != nil {
-		return nil, 0, err
+		return nil, logstore.TailCursor{}, err
 	}
 	if tail <= 0 || len(combinedEntries) >= tail {
-		return combinedEntries, tailOffset, nil
+		return combinedEntries, tailCursor, nil
 	}
 
 	legacyEntries, err := legacyLogEntries(process, tail)
 	if err != nil {
-		return nil, 0, err
+		return nil, logstore.TailCursor{}, err
 	}
 	if len(legacyEntries) == 0 {
-		return combinedEntries, tailOffset, nil
+		return combinedEntries, tailCursor, nil
 	}
 
 	combinedKeys := make(map[string]int, len(combinedEntries))
@@ -202,7 +202,7 @@ func mergedLogEntries(process *pb.Process, combinedLogPath string, tail int) ([]
 	for _, record := range records {
 		entries = append(entries, record.entry)
 	}
-	return entries, tailOffset, nil
+	return entries, tailCursor, nil
 }
 
 func legacyLogEntries(process *pb.Process, tail int) ([]logstore.Entry, error) {

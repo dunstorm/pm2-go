@@ -88,6 +88,30 @@ func TestReadEntriesSkipsMalformedRecords(t *testing.T) {
 	}
 }
 
+func TestReadEntriesReadsLargeFinalRecordBeyondInitialWindow(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	largeLine := strings.Repeat("x", 300*1024)
+	contents := strings.Join([]string{
+		`{"stream":"stdout","line":"before"}`,
+		`{"stream":"stderr","line":"` + largeLine + `"}`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(filePath, []byte(contents), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	entries, err := ReadEntries(filePath, 1)
+	if err != nil {
+		t.Fatalf("read entries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected one entry, got %d", len(entries))
+	}
+	if entries[0].Stream != StderrStream || entries[0].Line != largeLine {
+		t.Fatalf("expected large final stderr entry, got stream=%q line length=%d", entries[0].Stream, len(entries[0].Line))
+	}
+}
+
 func TestReadEntriesWithOffsetReturnsConsumedOffset(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	contents := `{"stream":"stdout","line":"ready"}` + "\n"
@@ -123,6 +147,31 @@ func TestReadEntriesWithOffsetReturnsFileSizeWhenTailDisabled(t *testing.T) {
 	}
 }
 
+func TestReadEntriesWithCursorReturnsSnapshotIdentity(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	contents := `{"stream":"stdout","line":"ready"}` + "\n"
+	if err := os.WriteFile(filePath, []byte(contents), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	if err := BumpCursorGeneration(filePath); err != nil {
+		t.Fatalf("bump cursor generation: %v", err)
+	}
+
+	_, cursor, err := ReadEntriesWithCursor(filePath, 10)
+	if err != nil {
+		t.Fatalf("read entries: %v", err)
+	}
+	if cursor.Offset != int64(len(contents)) {
+		t.Fatalf("expected consumed offset %d, got %d", len(contents), cursor.Offset)
+	}
+	if cursor.FileID == "" {
+		t.Fatal("expected snapshot file identity")
+	}
+	if cursor.Generation == "" {
+		t.Fatal("expected snapshot cursor generation")
+	}
+}
+
 func TestFormatEntry(t *testing.T) {
 	line := FormatEntry(Entry{
 		Timestamp: "2026-08-07T10:00:00Z",
@@ -131,6 +180,92 @@ func TestFormatEntry(t *testing.T) {
 	})
 	if !strings.Contains(line, "[stderr]") || !strings.Contains(line, "failed") {
 		t.Fatalf("unexpected formatted line: %q", line)
+	}
+}
+
+func TestTailEntriesFromCursorResetsOnCursorGenerationChange(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	oldLine := `{"stream":"stdout","line":"old"}` + "\n"
+	if err := os.WriteFile(filePath, []byte(oldLine), 0600); err != nil {
+		t.Fatalf("write initial log: %v", err)
+	}
+
+	_, cursor, err := ReadEntriesWithCursor(filePath, 0)
+	if err != nil {
+		t.Fatalf("read cursor: %v", err)
+	}
+
+	newLine := `{"stream":"stderr","line":"` + strings.Repeat("new", 64) + `"}`
+	if err := os.Truncate(filePath, 0); err != nil {
+		t.Fatalf("truncate log: %v", err)
+	}
+	if err := BumpCursorGeneration(filePath); err != nil {
+		t.Fatalf("bump cursor generation: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte(newLine+"\n"), 0600); err != nil {
+		t.Fatalf("write regenerated log: %v", err)
+	}
+
+	entries := make(chan Entry, 1)
+	errs := make(chan error, 1)
+	go func() {
+		errs <- TailEntriesFromCursor(filePath, cursor, func(entry Entry) {
+			entries <- entry
+		})
+	}()
+
+	select {
+	case entry := <-entries:
+		if entry.Stream != StderrStream || entry.Line != strings.Repeat("new", 64) {
+			t.Fatalf("expected regenerated entry, got %#v", entry)
+		}
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for regenerated entry")
+	}
+}
+
+func TestTailEntriesFromCursorResetsOnFileIdentityChange(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	oldLine := `{"stream":"stdout","line":"old"}` + "\n"
+	if err := os.WriteFile(filePath, []byte(oldLine), 0600); err != nil {
+		t.Fatalf("write initial log: %v", err)
+	}
+
+	_, cursor, err := ReadEntriesWithCursor(filePath, 0)
+	if err != nil {
+		t.Fatalf("read cursor: %v", err)
+	}
+	if cursor.FileID == "" {
+		t.Skip("file identity is unavailable on this platform")
+	}
+
+	newLine := `{"stream":"stderr","line":"` + strings.Repeat("rotated", 32) + `"}`
+	if err := os.Rename(filePath, filePath+".0"); err != nil {
+		t.Fatalf("rotate log: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte(newLine+"\n"), 0600); err != nil {
+		t.Fatalf("write replacement log: %v", err)
+	}
+
+	entries := make(chan Entry, 1)
+	errs := make(chan error, 1)
+	go func() {
+		errs <- TailEntriesFromCursor(filePath, cursor, func(entry Entry) {
+			entries <- entry
+		})
+	}()
+
+	select {
+	case entry := <-entries:
+		if entry.Stream != StderrStream || entry.Line != strings.Repeat("rotated", 32) {
+			t.Fatalf("expected replacement entry, got %#v", entry)
+		}
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for replacement entry")
 	}
 }
 
