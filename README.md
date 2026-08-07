@@ -32,7 +32,7 @@ PM2. Linux and macOS are supported; Windows is not currently supported.
 
 ## Requirements
 
-- Go 1.24 or newer
+- Go 1.25 or newer
 - Linux or macOS
 - Docker, only if you want to run the containerized end-to-end checks
 
