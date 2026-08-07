@@ -27,6 +27,7 @@ const devReloadScriptPath = "/assets/dev-reload.js"
 const (
 	httpReadHeaderTimeout = 5 * time.Second
 	httpReadTimeout       = 30 * time.Second
+	httpWriteTimeout      = 30 * time.Second
 	httpIdleTimeout       = 120 * time.Second
 )
 
@@ -113,6 +114,7 @@ func (server *Server) HTTPServer() *http.Server {
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: httpReadHeaderTimeout,
 		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
 		IdleTimeout:       httpIdleTimeout,
 	}
 }

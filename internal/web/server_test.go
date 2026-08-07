@@ -89,6 +89,9 @@ func TestHTTPServerSetsTimeouts(t *testing.T) {
 	if httpServer.ReadTimeout <= 0 {
 		t.Fatal("expected read timeout")
 	}
+	if httpServer.WriteTimeout <= 0 {
+		t.Fatal("expected write timeout")
+	}
 	if httpServer.IdleTimeout <= 0 {
 		t.Fatal("expected idle timeout")
 	}
