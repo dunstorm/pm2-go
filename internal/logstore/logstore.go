@@ -377,9 +377,6 @@ func TailEntriesFromCursor(filename string, cursor TailCursor, handle func(Entry
 			}
 			nextGeneration := ReadCursorGeneration(filename)
 			if tail.generation != nextGeneration {
-				if err := readAvailableTailEntries(tail.reader, handle); err != nil {
-					return err
-				}
 				if err := tail.reopen(filename); err != nil {
 					return err
 				}

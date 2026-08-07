@@ -385,6 +385,66 @@ func TestTailEntriesFromCursorDrainsRotatedDescriptorBeforeReopen(t *testing.T) 
 	}
 }
 
+func TestTailEntriesFromCursorDoesNotDrainTruncatedGeneration(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	oldLine := `{"stream":"stdout","line":"old-old-old-old"}` + "\n"
+	if err := os.WriteFile(filePath, []byte(oldLine), 0600); err != nil {
+		t.Fatalf("write initial log: %v", err)
+	}
+
+	_, cursor, err := ReadEntriesWithCursor(filePath, 0)
+	if err != nil {
+		t.Fatalf("read cursor: %v", err)
+	}
+
+	entries := make(chan Entry, 8)
+	errs := make(chan error, 1)
+	go func() {
+		errs <- TailEntriesFromCursor(filePath, cursor, func(entry Entry) {
+			entries <- entry
+		})
+	}()
+
+	time.Sleep(250 * time.Millisecond)
+	if err := os.Truncate(filePath, 0); err != nil {
+		t.Fatalf("truncate log: %v", err)
+	}
+	if err := BumpCursorGeneration(filePath); err != nil {
+		t.Fatalf("bump cursor generation: %v", err)
+	}
+	newLines := []string{
+		`{"stream":"stdout","line":"first"}`,
+		`{"stream":"stderr","line":"second"}`,
+		`{"stream":"stdout","line":"third"}`,
+		`{"stream":"stderr","line":"fourth"}`,
+	}
+	if err := os.WriteFile(filePath, []byte(strings.Join(newLines, "\n")+"\n"), 0600); err != nil {
+		t.Fatalf("write regenerated log: %v", err)
+	}
+
+	want := []string{"first", "second", "third", "fourth"}
+	for _, wantLine := range want {
+		select {
+		case entry := <-entries:
+			if entry.Line != wantLine {
+				t.Fatalf("expected regenerated entry %q, got %#v", wantLine, entry)
+			}
+		case err := <-errs:
+			t.Fatalf("tail failed: %v", err)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for regenerated entry %q", wantLine)
+		}
+	}
+
+	select {
+	case entry := <-entries:
+		t.Fatalf("expected no duplicate regenerated entries, got %#v", entry)
+	case err := <-errs:
+		t.Fatalf("tail failed: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
 func TestTailEntriesFromStartsAtOffset(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
 	firstLine := `{"stream":"stdout","line":"first"}` + "\n"
