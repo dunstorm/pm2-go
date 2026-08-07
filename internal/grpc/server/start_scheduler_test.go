@@ -1,11 +1,16 @@
 package server
 
 import (
+	"errors"
+	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
+	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
+	"github.com/rs/zerolog"
 )
 
 func TestBuildLogRotationGroupsDeduplicatesSharedPaths(t *testing.T) {
@@ -47,6 +52,54 @@ func TestMaxLogFileCountUsesHighestSharedCount(t *testing.T) {
 	})
 	if got != 7 {
 		t.Fatalf("expected max log file count 7, got %d", got)
+	}
+}
+
+func TestHandleMaxLogGroupAdvancesCountWhenRotationRecreateFails(t *testing.T) {
+	dir := t.TempDir()
+	outPath := filepath.Join(dir, "api-out.log")
+	errPath := filepath.Join(dir, "api-err.log")
+	combinedPath := logstore.CombinedPath(outPath)
+	if err := os.WriteFile(outPath, []byte("large enough"), 0640); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	process := &pb.Process{
+		Id:           1,
+		LogFilePath:  outPath,
+		ErrFilePath:  errPath,
+		LogFileCount: 4,
+	}
+	logger := zerolog.New(io.Discard)
+	handler := &Handler{
+		logger:       &logger,
+		databaseById: map[int32]*pb.Process{process.Id: process},
+	}
+
+	previousRotateLogFile := rotateLogFile
+	rotateLogFile = func(filename, rotatedFilename string) (bool, error) {
+		if filename == outPath && rotatedFilename == outPath+".4" {
+			return true, errors.New("recreate failed")
+		}
+		return false, nil
+	}
+	t.Cleanup(func() {
+		rotateLogFile = previousRotateLogFile
+	})
+
+	handleMaxLogGroup(handler, &logRotationGroup{
+		logFilePath:     outPath,
+		errFilePath:     errPath,
+		combinedLogPath: combinedPath,
+		processes:       []*pb.Process{process},
+	}, utils.Config{
+		LogRotate:         true,
+		LogRotateSize:     1,
+		LogRotateMaxFiles: 10,
+	})
+
+	if process.LogFileCount != 5 {
+		t.Fatalf("expected log file count to advance after partial rotation, got %d", process.LogFileCount)
 	}
 }
 

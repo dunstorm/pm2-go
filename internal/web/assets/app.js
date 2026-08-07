@@ -22,6 +22,8 @@ const state = {
   inFlightActions: new Set(),
   toastTimer: null,
   chartTimer: null,
+  processRefreshPromise: null,
+  processRefreshQueued: false,
   processRequestSeq: 0,
   detailRequestSeq: 0,
   logRequestSeq: 0,
@@ -248,10 +250,31 @@ async function loadSession() {
 }
 
 async function refreshAll() {
+  if (state.processRefreshPromise) {
+    state.processRefreshQueued = true;
+    return state.processRefreshPromise;
+  }
+  const refreshPromise = runRefreshQueue().finally(() => {
+    if (state.processRefreshPromise === refreshPromise) {
+      state.processRefreshPromise = null;
+    }
+  });
+  state.processRefreshPromise = refreshPromise;
+  return refreshPromise;
+}
+
+async function runRefreshQueue() {
+  do {
+    state.processRefreshQueued = false;
+    await runRefreshAll();
+  } while (state.processRefreshQueued);
+}
+
+async function runRefreshAll() {
   const loaded = await loadProcesses();
   if (!loaded) return;
   if (isProcessId(state.selectedId)) {
-    await loadSelectedDetails();
+    await loadSelectedDetails({ includeLogs: state.logLive });
   }
 }
 
@@ -293,7 +316,7 @@ async function loadProcesses() {
   }
 }
 
-async function loadSelectedDetails() {
+async function loadSelectedDetails({ includeLogs = true } = {}) {
   if (!isProcessId(state.selectedId)) {
     state.selectedProcess = null;
     state.metrics = [];
@@ -310,7 +333,11 @@ async function loadSelectedDetails() {
     state.metrics = Array.isArray(data.metrics) ? data.metrics : [];
     renderSelectedProcess();
     renderCharts();
-    await loadLogs(false, requestedId);
+    if (includeLogs) {
+      await loadLogs(false, requestedId);
+    } else {
+      renderLogs();
+    }
   } catch (error) {
     if (!isCurrentDetailRequest(requestedId, requestSeq)) return;
     setError(error.message);
