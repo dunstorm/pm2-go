@@ -1,7 +1,6 @@
 package web
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -11,8 +10,6 @@ import (
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
 )
-
-const maxInitialLogBytes = 256 * 1024
 
 type logResponse struct {
 	FileID string   `json:"fileId"`
@@ -48,18 +45,22 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 	}
 
 	initialRead := offset == 0
-	readStart := offset
-	var reader io.Reader = file
-	if offset == 0 && size > maxInitialLogBytes {
-		offset = size - maxInitialLogBytes
-		if _, err := file.Seek(offset, io.SeekStart); err != nil {
+	if initialRead {
+		lines, cursor, err := logstore.ReadLinesWithCursor(filePath, tailLines)
+		if err != nil {
 			return logResponse{}, err
 		}
-		buffered := bufio.NewReader(file)
-		skipped, _ := buffered.ReadString('\n')
-		readStart = offset + int64(len(skipped))
-		reader = buffered
-	} else if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return logResponse{
+			FileID: logFileIDFromParts(cursor.FileID, cursor.Generation),
+			Offset: cursor.Offset,
+			Size:   cursor.Offset,
+			Lines:  lines,
+		}, nil
+	}
+
+	readStart := offset
+	var reader io.Reader = file
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return logResponse{}, err
 	}
 
@@ -68,9 +69,6 @@ func readLog(filePath string, offset int64, fileID string, tailLines int) (logRe
 		return logResponse{}, err
 	}
 	lines := splitLogLines(string(contents))
-	if initialRead && len(lines) > tailLines {
-		lines = lines[len(lines)-tailLines:]
-	}
 	consumedOffset := readStart + int64(len(contents))
 	return logResponse{
 		FileID: currentFileID,
@@ -101,10 +99,16 @@ func readCombinedLog(filePath string, offset int64, fileID string, tailLines int
 func logFileID(filePath string, info os.FileInfo) string {
 	generation := logstore.ReadCursorGeneration(filePath)
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		fileID := fmt.Sprintf("%d:%d", stat.Dev, stat.Ino)
-		if generation != "" {
-			return fileID + ":" + generation
-		}
+		return logFileIDFromParts(fmt.Sprintf("%d:%d", stat.Dev, stat.Ino), generation)
+	}
+	return generation
+}
+
+func logFileIDFromParts(fileID, generation string) string {
+	if fileID != "" && generation != "" {
+		return fileID + ":" + generation
+	}
+	if fileID != "" {
 		return fileID
 	}
 	return generation

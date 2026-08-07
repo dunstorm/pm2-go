@@ -172,6 +172,44 @@ func TestReadEntriesWithCursorReturnsSnapshotIdentity(t *testing.T) {
 	}
 }
 
+func TestReadLinesWithCursorRetriesWhenGenerationChangesAroundSnapshot(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "api-combined.jsonl")
+	oldContents := `{"stream":"stdout","line":"old"}` + "\n"
+	if err := os.WriteFile(filePath, []byte(oldContents), 0600); err != nil {
+		t.Fatalf("write old log: %v", err)
+	}
+
+	newContents := `{"stream":"stderr","line":"new"}` + "\n"
+	generationReads := 0
+	readGeneration := func(string) string {
+		generationReads++
+		if generationReads == 2 {
+			if err := os.WriteFile(filePath, []byte(newContents), 0600); err != nil {
+				t.Fatalf("write regenerated log: %v", err)
+			}
+			return "new-generation"
+		}
+		if generationReads > 2 {
+			return "new-generation"
+		}
+		return "old-generation"
+	}
+
+	lines, cursor, err := readTailLinesWithGenerationReader(filePath, 1, readGeneration)
+	if err != nil {
+		t.Fatalf("read lines: %v", err)
+	}
+	if len(lines) != 1 || lines[0] != strings.TrimRight(newContents, "\n") {
+		t.Fatalf("expected regenerated line, got %#v", lines)
+	}
+	if cursor.Offset != int64(len(newContents)) {
+		t.Fatalf("expected regenerated offset %d, got %d", len(newContents), cursor.Offset)
+	}
+	if cursor.Generation != "new-generation" {
+		t.Fatalf("expected new generation cursor, got %q", cursor.Generation)
+	}
+}
+
 func TestFormatEntry(t *testing.T) {
 	line := FormatEntry(Entry{
 		Timestamp: "2026-08-07T10:00:00Z",

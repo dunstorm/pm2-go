@@ -313,6 +313,26 @@ func TestReadLogHonorsTailAfterBoundedInitialRead(t *testing.T) {
 	}
 }
 
+func TestReadLogIncludesLargeFinalLineAfterBoundedInitialRead(t *testing.T) {
+	logFile := t.TempDir() + "/large-final.log"
+	largeLine := strings.Repeat("x", 300*1024)
+	contents := "before\n" + largeLine + "\n"
+	if err := os.WriteFile(logFile, []byte(contents), 0600); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	logs, err := readLog(logFile, 0, "", 1)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if logs.Offset != int64(len(contents)) {
+		t.Fatalf("expected consumed offset %d, got %d", len(contents), logs.Offset)
+	}
+	if len(logs.Lines) != 1 || logs.Lines[0] != largeLine {
+		t.Fatalf("expected large final line, got %d lines with final length %d", len(logs.Lines), len(strings.Join(logs.Lines, "")))
+	}
+}
+
 func TestReadLogReturnsConsumedOffset(t *testing.T) {
 	logFile := t.TempDir() + "/incremental.log"
 	contents := "first\nsecond\n"

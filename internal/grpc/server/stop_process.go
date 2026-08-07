@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	processrunner "github.com/dunstorm/pm2-go/internal/process"
 	"github.com/dunstorm/pm2-go/internal/utils"
 	pb "github.com/dunstorm/pm2-go/proto"
 )
@@ -42,7 +43,7 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	// for child process
 	_ = utils.KillProcessGroup(found)
 	if pid > 0 {
-		utils.ExitPid(pid, 2*time.Second)
+		waitForTrackedProcessExit(pid, 2*time.Second)
 	}
 	updateProcessMap(api, in.Id, nil)
 	api.persistStateLocked()
@@ -50,4 +51,11 @@ func (api *Handler) StopProcess(ctx context.Context, in *pb.StopProcessRequest) 
 	return &pb.StopProcessResponse{
 		Success: true,
 	}, nil
+}
+
+func waitForTrackedProcessExit(pid int32, timeout time.Duration) bool {
+	if exited, tracked := processrunner.WaitForSpawnedProcess(pid, timeout); tracked {
+		return exited
+	}
+	return waitForProcessExit(pid, timeout)
 }

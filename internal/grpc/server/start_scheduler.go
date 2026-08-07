@@ -148,8 +148,6 @@ func restartProcess(handler *Handler, p *pb.Process) {
 
 	p.InitUptime()
 	p.InitStartedAt()
-
-	go process.Wait()
 }
 
 func restartLiveProcess(handler *Handler, p *pb.Process) {
@@ -162,6 +160,9 @@ func restartLiveProcess(handler *Handler, p *pb.Process) {
 	if found != nil {
 		if err := utils.KillProcessGroup(found); err != nil {
 			handler.logger.Warn().Err(err).Msgf("Failed to stop process %s before restart", p.Name)
+		}
+		if p.Pid > 0 {
+			waitForTrackedProcessExit(p.Pid, 2*time.Second)
 		}
 	}
 

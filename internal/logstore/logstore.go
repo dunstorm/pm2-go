@@ -129,7 +129,7 @@ func ReadEntriesWithOffset(filename string, tail int) ([]Entry, int64, error) {
 }
 
 func ReadEntriesWithCursor(filename string, tail int) ([]Entry, TailCursor, error) {
-	lines, cursor, err := readTailLines(filename, tail)
+	lines, cursor, err := ReadLinesWithCursor(filename, tail)
 	if err != nil {
 		return nil, TailCursor{}, err
 	}
@@ -146,6 +146,10 @@ func ReadEntriesWithCursor(filename string, tail int) ([]Entry, TailCursor, erro
 		entries = append(entries, entry)
 	}
 	return entries, cursor, nil
+}
+
+func ReadLinesWithCursor(filename string, tail int) ([]string, TailCursor, error) {
+	return readTailLinesWithGenerationReader(filename, tail, ReadCursorGeneration)
 }
 
 func TailEntries(filename string, handle func(Entry)) error {
@@ -297,22 +301,42 @@ func fileIdentity(info os.FileInfo) string {
 	return ""
 }
 
-func readTailLines(filename string, tail int) ([]string, TailCursor, error) {
-	file, err := os.Open(filename)
+func readTailLinesWithGenerationReader(filename string, tail int, readGeneration func(string) string) ([]string, TailCursor, error) {
+	file, info, generation, err := openSnapshotFile(filename, readGeneration)
 	if err != nil {
 		return nil, TailCursor{}, err
 	}
 	defer file.Close()
 
-	info, err := file.Stat()
-	if err != nil {
-		return nil, TailCursor{}, err
-	}
+	return readTailLinesFromSnapshot(file, info, generation, tail)
+}
 
+func openSnapshotFile(filename string, readGeneration func(string) string) (*os.File, os.FileInfo, string, error) {
+	for {
+		generationBefore := readGeneration(filename)
+		file, err := os.Open(filename)
+		if err != nil {
+			return nil, nil, "", err
+		}
+
+		info, err := file.Stat()
+		if err != nil {
+			_ = file.Close()
+			return nil, nil, "", err
+		}
+		generationAfter := readGeneration(filename)
+		if generationBefore == generationAfter {
+			return file, info, generationAfter, nil
+		}
+		_ = file.Close()
+	}
+}
+
+func readTailLinesFromSnapshot(file *os.File, info os.FileInfo, generation string, tail int) ([]string, TailCursor, error) {
 	cursor := TailCursor{
 		Offset:     info.Size(),
 		FileID:     fileIdentity(info),
-		Generation: ReadCursorGeneration(filename),
+		Generation: generation,
 		snapshot:   true,
 	}
 	if tail <= 0 || info.Size() == 0 {

@@ -18,6 +18,7 @@ import (
 )
 
 var logCaptureDrainTimeout = 2 * time.Second
+var spawnedProcessWaits sync.Map
 
 type SpawnParams struct {
 	Name                     string            `json:"name"`
@@ -187,6 +188,36 @@ func waitForLogCapture(logsWG *sync.WaitGroup, readers ...*os.File) {
 	}
 }
 
+func WaitForSpawnedProcess(pid int32, timeout time.Duration) (bool, bool) {
+	value, ok := spawnedProcessWaits.Load(pid)
+	if !ok {
+		return false, false
+	}
+
+	done, ok := value.(chan struct{})
+	if !ok {
+		return false, false
+	}
+
+	if timeout <= 0 {
+		select {
+		case <-done:
+			return true, true
+		default:
+			return false, true
+		}
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true, true
+	case <-timer.C:
+		return false, true
+	}
+}
+
 func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	if err := params.fillDefaults(); err != nil {
 		return nil, err
@@ -249,8 +280,13 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 		return nil, err
 	}
 
+	pid := int32(cmd.Process.Pid)
+	waitDone := make(chan struct{})
+	spawnedProcessWaits.Store(pid, waitDone)
 	go func() {
 		_ = cmd.Wait()
+		close(waitDone)
+		spawnedProcessWaits.Delete(pid)
 		closeLogCapture()
 	}()
 
@@ -265,7 +301,7 @@ func SpawnNewProcess(params SpawnParams) (*pb.Process, error) {
 	rpcProcess := &pb.Process{
 		Name:                     params.Name,
 		ExecutablePath:           params.ExecutablePath,
-		Pid:                      int32(cmd.Process.Pid),
+		Pid:                      pid,
 		Args:                     params.Args,
 		Cwd:                      params.Cwd,
 		LogFilePath:              params.LogFilePath,

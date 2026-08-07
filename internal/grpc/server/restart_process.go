@@ -63,7 +63,11 @@ func waitForProcessExit(pid int32, timeout time.Duration) bool {
 
 func stopProcessForRestart(found *os.Process, pid int32, in *pb.RestartProcessRequest) error {
 	if !in.Graceful {
-		return utils.KillProcessGroup(found)
+		err := utils.KillProcessGroup(found)
+		if pid > 0 {
+			waitForTrackedProcessExit(pid, 2*time.Second)
+		}
+		return err
 	}
 
 	signal, err := reloadSignal(in.Signal)
@@ -78,7 +82,7 @@ func stopProcessForRestart(found *os.Process, pid int32, in *pb.RestartProcessRe
 	if in.KillTimeoutMs > 0 {
 		timeout = time.Duration(in.KillTimeoutMs) * time.Millisecond
 	}
-	if waitForProcessExit(pid, timeout) {
+	if waitForTrackedProcessExit(pid, timeout) {
 		return nil
 	}
 	return utils.KillProcessGroup(found)
@@ -179,8 +183,6 @@ func (api *Handler) RestartProcess(ctx context.Context, in *pb.RestartProcessReq
 	api.processes[newProcess.Id] = osProcess
 	delete(api.metricsUpdatedAt, newProcess.Id)
 	api.persistStateLocked()
-
-	go osProcess.Wait()
 
 	return cloneProcess(newProcess), nil
 }
