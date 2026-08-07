@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -64,7 +65,14 @@ func NewServer(config Config, source ProcessSource) (*Server, error) {
 }
 
 func (server *Server) Addr() string {
-	return fmt.Sprintf("%s:%d", server.config.Host, server.config.Port)
+	return net.JoinHostPort(bindHost(server.config.Host), strconv.Itoa(server.config.Port))
+}
+
+func bindHost(host string) string {
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		return strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	return host
 }
 
 func (server *Server) Token() string {

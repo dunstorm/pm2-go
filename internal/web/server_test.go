@@ -358,6 +358,22 @@ func TestAllowRemoteAcceptsNonLoopbackHost(t *testing.T) {
 	}
 }
 
+func TestAddrFormatsIPv6LoopbackHost(t *testing.T) {
+	for _, host := range []string{"::1", "[::1]"} {
+		server, err := NewServer(Config{
+			Host:  host,
+			Port:  DefaultPort,
+			Token: "secret",
+		}, fakeProcessSource{})
+		if err != nil {
+			t.Fatalf("expected IPv6 loopback host %q to be accepted: %v", host, err)
+		}
+		if server.Addr() != "[::1]:9615" {
+			t.Fatalf("unexpected addr for host %q: %q", host, server.Addr())
+		}
+	}
+}
+
 func TestGeneratedToken(t *testing.T) {
 	server, err := NewServer(Config{Port: DefaultPort}, fakeProcessSource{})
 	if err != nil {
