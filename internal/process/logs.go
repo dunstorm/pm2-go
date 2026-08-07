@@ -19,6 +19,8 @@ const (
 	logReadBufferSize       = 32 * 1024
 	maxLogDrainLinesPerPass = 1024
 	maxStreamLogBufferBytes = 1024 * 1024
+	logPollEvents           = unix.POLLIN | unix.POLLHUP | unix.POLLERR
+	logTerminalPollEvents   = unix.POLLHUP | unix.POLLERR | unix.POLLNVAL
 )
 
 type managedLogFile struct {
@@ -264,12 +266,18 @@ func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFi
 		{name: logstore.StdoutStream, reader: stdoutReader, file: stdoutFile},
 		{name: logstore.StderrStream, reader: stderrReader, file: stderrFile},
 	}
+	active := 0
 	for _, stream := range streams {
-		_ = unix.SetNonblock(int(stream.reader.Fd()), true)
+		fd, ok := stream.fileDescriptor()
+		if !ok {
+			stream.closed = true
+			continue
+		}
+		_ = unix.SetNonblock(fd, true)
+		active++
 	}
 
 	buffer := make([]byte, logReadBufferSize)
-	active := len(streams)
 	next := 0
 	for active > 0 {
 		progressed := false
@@ -288,28 +296,48 @@ func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFi
 			if stream.closed {
 				continue
 			}
+			fd, ok := stream.fileDescriptor()
+			if !ok {
+				closeProcessLogStream(stream, sink, &active)
+				progressed = true
+				continue
+			}
 			pollFDs = append(pollFDs, unix.PollFd{
-				Fd:     int32(stream.reader.Fd()),
-				Events: unix.POLLIN | unix.POLLHUP | unix.POLLERR,
+				Fd:     int32(fd),
+				Events: logPollEvents,
 			})
 			pollStreams = append(pollStreams, stream)
+		}
+		if len(pollFDs) == 0 {
+			continue
 		}
 
 		_, err := unix.Poll(pollFDs, 10)
 		if err != nil && err != unix.EINTR {
 			for _, stream := range pollStreams {
-				stream.close(sink)
+				closeProcessLogStream(stream, sink, &active)
 			}
 			break
 		}
 
 		for index, pollFD := range pollFDs {
-			if pollFD.Revents&(unix.POLLIN|unix.POLLHUP|unix.POLLERR) == 0 {
+			if pollFD.Revents&unix.POLLNVAL != 0 {
+				closeProcessLogStream(pollStreams[index], sink, &active)
+				progressed = true
+				continue
+			}
+			if pollFD.Revents&(unix.POLLIN|logTerminalPollEvents) == 0 {
 				continue
 			}
 			stream := pollStreams[index]
+			fd, ok := stream.fileDescriptor()
+			if !ok {
+				closeProcessLogStream(stream, sink, &active)
+				progressed = true
+				continue
+			}
 
-			n, err := unix.Read(int(stream.reader.Fd()), buffer)
+			n, err := unix.Read(fd, buffer)
 			if n > 0 {
 				stream.buffer = append(stream.buffer, buffer[:n]...)
 				progressed = true
@@ -318,14 +346,12 @@ func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFi
 				if err == unix.EAGAIN || err == unix.EWOULDBLOCK {
 					continue
 				}
-				stream.close(sink)
-				active--
+				closeProcessLogStream(stream, sink, &active)
 				progressed = true
 				continue
 			}
 			if n == 0 {
-				stream.close(sink)
-				active--
+				closeProcessLogStream(stream, sink, &active)
 				progressed = true
 			}
 		}
@@ -334,6 +360,22 @@ func processStreamLogs(stdoutReader, stderrReader *os.File, stdoutFile, stderrFi
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+func (stream *processLogStream) fileDescriptor() (int, bool) {
+	if stream.reader == nil {
+		return -1, false
+	}
+	fd := int(stream.reader.Fd())
+	return fd, fd >= 0
+}
+
+func closeProcessLogStream(stream *processLogStream, sink *combinedLogSink, active *int) {
+	if stream.closed {
+		return
+	}
+	stream.close(sink)
+	*active = *active - 1
 }
 
 func (stream *processLogStream) hasBufferedLine() bool {

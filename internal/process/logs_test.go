@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dunstorm/pm2-go/internal/logstore"
+	"golang.org/x/sys/unix"
 )
 
 func openManagedTestLogFile(t *testing.T, path string) *managedLogFile {
@@ -188,6 +189,48 @@ func TestProcessStreamLogsDrainsBusyStreams(t *testing.T) {
 	}
 	if len(entries) != lineCount*2 {
 		t.Fatalf("expected %d combined entries, got %d", lineCount*2, len(entries))
+	}
+}
+
+func TestProcessStreamLogsTreatsInvalidPollDescriptorAsClosed(t *testing.T) {
+	dir := t.TempDir()
+	outFile := openManagedTestLogFile(t, filepath.Join(dir, "api-out.log"))
+	errFile := openManagedTestLogFile(t, filepath.Join(dir, "api-err.log"))
+	combinedPath := filepath.Join(dir, "api-combined.jsonl")
+	combinedFile := openManagedTestLogFile(t, combinedPath)
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("open stdout pipe: %v", err)
+	}
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("open stderr pipe: %v", err)
+	}
+	defer stdoutWriter.Close()
+	defer stderrWriter.Close()
+
+	sink := newCombinedLogSink(combinedFile)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		processStreamLogs(stdoutReader, stderrReader, outFile, errFile, sink)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	_ = stdoutReader.Close()
+	_ = stderrReader.Close()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("processStreamLogs did not finish after readers were externally closed")
+	}
+	sink.close()
+}
+
+func TestLogTerminalPollEventsIncludesInvalidDescriptor(t *testing.T) {
+	if logTerminalPollEvents&unix.POLLNVAL == 0 {
+		t.Fatal("expected invalid poll descriptors to be terminal")
 	}
 }
 
